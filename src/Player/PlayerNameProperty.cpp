@@ -87,27 +87,17 @@ const char *PlayerNameProperty::getName(DWORD procId) const
 
 bool PlayerNameProperty::hasChanged(DWORD procId) const
 {
-	std::lock_guard<std::mutex> lock(propertyMutex);
-	auto it = changedFlags.find(procId);
-	return (it != changedFlags.end()) && it->second;
+	// Player names are static, so they never change after initial setup
+	return false;
 }
 
 void PlayerNameProperty::acknowledgeChange(DWORD procId)
 {
-	std::lock_guard<std::mutex> lock(propertyMutex);
-	changedFlags[procId] = false;
+	// No action needed for static property
 }
 
 void PlayerNameProperty::reportChange(DWORD procId) const
 {
-	std::lock_guard<std::mutex> lock(propertyMutex);
-
-	auto currentIt = playerNames.find(procId);
-	auto previousIt = previousNames.find(procId);
-
-	const char *currentName = (currentIt != playerNames.end() && currentIt->second) ? currentIt->second : "<unknown>";
-	std::string prevName = (previousIt != previousNames.end()) ? previousIt->second : "<unknown>";
-
-	std::cout << "Process " << procId << " - Player name changed from '"
-						<< prevName << "' to '" << currentName << "'" << std::endl;
+	// Player names are static, so this is a no-op
+	// This method is only implemented to satisfy the interface
 }
