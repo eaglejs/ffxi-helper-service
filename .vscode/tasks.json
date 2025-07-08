@@ -6,21 +6,21 @@
 			"label": "C/C++: g++.exe build active file",
 			"command": "C:\\msys64\\mingw32\\bin\\g++.exe",
 			"args": [
-		"-g",
-		"-Wall",
-		"-Wextra",
-		"-m32",
-		"-lcurl",
-		"-I${workspaceFolder}\\includes",
-		"${fileDirname}\\FFXIHelperService.cpp",
-		"${fileDirname}\\helpers\\memory.cpp",
-		"${fileDirname}\\helpers\\http.cpp",
-		"${fileDirname}\\Player\\Player.cpp",
-		"${fileDirname}\\Player\\PlayerNameProperty.cpp",
-		"${fileDirname}\\Player\\PlayerName.cpp",
-		"${fileDirname}\\Player\\TacticalPoints.cpp",		"${fileDirname}\\Player\\TacticalPointsProperty.cpp",
-		"-o",
-		"${fileDirname}\\${fileBasenameNoExtension}.exe",
+				"-g",
+				"-Wall",
+				"-Wextra",
+				"-m32",
+				"-I${workspaceFolder}\\includes",
+				"${fileDirname}\\FFXIHelperService.cpp",
+				"${fileDirname}\\helpers\\memory.cpp",
+				"${fileDirname}\\helpers\\http.cpp",
+				"${fileDirname}\\Player\\Player.cpp",
+				"${fileDirname}\\Player\\PlayerNameProperty.cpp",
+				"${fileDirname}\\Player\\PlayerName.cpp",
+				"${fileDirname}\\Player\\TacticalPoints.cpp",
+				"${fileDirname}\\Player\\TacticalPointsProperty.cpp",
+				"-o",
+				"${fileDirname}\\${fileBasenameNoExtension}.exe"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}",
@@ -29,15 +29,15 @@
 				},
 				// Use cmd.exe as the shell for Windows
 				"shell": {
-          "executable": "cmd.exe",
-          "args": ["/c"]
-        }
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
 			},
 			"problemMatcher": ["$gcc"],
 			"group": {
 				"kind": "build",
 				"isDefault": true
-			},
+			}
 		}
 	]
 }
