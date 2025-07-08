@@ -6,11 +6,10 @@
       "generator": "MinGW Makefiles",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-				"CMAKE_MAKE_PROGRAM": "mingw32-make",
-				"CMAKE_C_COMPILER": "gcc",
-				"CMAKE_CXX_COMPILER": "g++"
+        "CMAKE_MAKE_PROGRAM": "mingw32-make",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
       }
     }
   ]
-
 }

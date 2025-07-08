@@ -1,2 +1,5 @@
 **/*.exe
 build/*
+vcpkg_installed/
+.cmake/
+CMakeFIles/
