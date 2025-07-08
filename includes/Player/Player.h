@@ -13,7 +13,6 @@
 
 // Forward declarations for property classes
 class PlayerProperty;
-class PlayerNameProperty;
 
 // Core player data structure
 struct PlayerProcessInfo {
@@ -40,8 +39,15 @@ private:
 
     std::vector<PropertyConfig> propertyConfigs;
 
-    // Static property that doesn't need continuous monitoring
-    std::shared_ptr<PlayerNameProperty> playerNameProperty;
+    // Static properties (read once, don't change during gameplay)
+    std::map<DWORD, std::string> playerNames;
+    std::map<DWORD, DWORD> playerIds;
+
+    // Static property memory addresses
+    static const DWORD PLAYER_NAME_OFFSET_BASE = 0x000EA53C;
+    static const std::vector<unsigned int> PLAYER_NAME_OFFSETS;
+    static const DWORD PLAYER_ID_OFFSET_BASE = 0x000106BC;
+    static const std::vector<unsigned int> PLAYER_ID_OFFSETS;
 
     // Monitoring thread control
     std::thread monitorThread;
@@ -51,6 +57,11 @@ private:
 
     // Process initialization
     void initializeProcesses();
+
+    // Static property reading
+    void readStaticProperties();
+    void readPlayerName(const PlayerProcessInfo& process);
+    void readPlayerId(const PlayerProcessInfo& process);
 
     // Thread function for continuous monitoring
     void monitorPropertiesThread();
@@ -75,6 +86,9 @@ public:
 
     // Name property access (implemented directly for convenience)
     std::string getPlayerName(DWORD procId) const;
+
+    // PlayerId property access (implemented directly for convenience)
+    DWORD getPlayerId(DWORD procId) const;
 
     // TP property access (implemented directly for convenience)
     int getTacticalPoints(DWORD procId) const;

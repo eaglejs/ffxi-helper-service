@@ -2,6 +2,7 @@
 
 #include "Player/Player.h"
 #include "helpers/memory.h"
+#include "helpers/http.h"
 #include <map>
 
 // Forward declaration of global player instance
@@ -18,6 +19,16 @@ private:
     // Change tracking
     std::map<DWORD, int> previousTP;
     std::map<DWORD, bool> changedFlags;
+
+    // HTTP client for sending TP updates
+    mutable HttpClient httpClient;
+    static const std::string API_ENDPOINT;
+
+    // Helper method for sending TP data to API
+    void sendTPUpdate(const std::string& playerName, DWORD playerId, int tp) const;
+
+    // Helper method to sanitize player name for JSON
+    std::string sanitizePlayerName(const std::string& rawName) const;
 
 public:
     TacticalPointsProperty();

@@ -28,7 +28,6 @@ set(SOURCES
     src/helpers/memory.cpp
     src/helpers/http.cpp
     src/Player/Player.cpp
-    src/Player/PlayerNameProperty.cpp
     src/Player/TacticalPointsProperty.cpp
 )
 
@@ -36,12 +35,8 @@ set(SOURCES
 set(HEADERS
     includes/helpers/memory.h
     includes/helpers/http.h
-    includes/helpers/api_client_example.h
-    includes/helpers/http_example.h
     includes/Player/Player.h
-    includes/Player/PlayerNameProperty.h
     includes/Player/TacticalPointsProperty.h
-    includes/Player/ExampleProperty.h
 )
 
 # Create the executable

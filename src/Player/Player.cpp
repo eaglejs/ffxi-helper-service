@@ -1,6 +1,5 @@
 #include <Windows.h>
 #include "Player/Player.h"
-#include "Player/PlayerNameProperty.h"
 #include "Player/TacticalPointsProperty.h"
 #include "helpers/memory.h"
 #include <iostream>
@@ -9,6 +8,10 @@
 
 // Initialize static members
 std::map<DWORD, PlayerProcessInfo> Player::processes;
+
+// Static property offset definitions
+const std::vector<unsigned int> Player::PLAYER_NAME_OFFSETS = {0x314};
+const std::vector<unsigned int> Player::PLAYER_ID_OFFSETS = {0x4E0};
 
 // For TacticalPointsProperty to access player names
 extern Player *g_playerInstance;
@@ -20,23 +23,14 @@ Player::Player() : monitoringActive(false)
 	// Initialize processes first
 	initializeProcesses();
 
-	// Create name property but don't add it to monitoring (name is static)
-	playerNameProperty = std::make_shared<PlayerNameProperty>();
+	// Read static properties (name and ID) once
+	readStaticProperties();
 
 	// Register tactical points for continuous monitoring (update every 100ms)
 	registerProperty(std::make_shared<TacticalPointsProperty>(), 100);
 
-	// Refresh all properties initially including the name property
+	// Refresh all dynamic properties initially
 	refreshAllProperties();
-
-	// Do a one-time refresh of the name property for all processes
-	for (const auto &pair : processes)
-	{
-		if (pair.second.isValid)
-		{
-			playerNameProperty->refresh(pair.second);
-		}
-	}
 
 	// Start the monitoring thread
 	startMonitoring();
@@ -129,6 +123,88 @@ void Player::initializeProcesses()
 	}
 }
 
+void Player::readStaticProperties()
+{
+	// Read static properties for all valid processes
+	for (const auto &pair : processes)
+	{
+		if (pair.second.isValid)
+		{
+			readPlayerName(pair.second);
+			readPlayerId(pair.second);
+		}
+	}
+
+	// Debug output
+	for (const auto &pair : processes)
+	{
+		if (pair.second.isValid)
+		{
+			DWORD procId = pair.first;
+			std::cout << "Updated player name for process " << procId << ": " << getPlayerName(procId) << std::endl;
+		}
+	}
+}
+
+void Player::readPlayerName(const PlayerProcessInfo& process)
+{
+	// Get player name address
+	uintptr_t nameAddress = FindDMAAddyInDLL(
+		process.hProcess,
+		process.procId,
+		dllName,
+		PLAYER_NAME_OFFSET_BASE,
+		PLAYER_NAME_OFFSETS);
+
+	if (nameAddress == 0)
+	{
+		std::cout << "Failed to find player name address for process " << process.procId << std::endl;
+		return;
+	}
+
+	// Read player name from memory (assuming max 16 chars for FFXI names)
+	char nameBuffer[17] = {0}; // 16 chars + null terminator
+	if (ReadProcessMemory(process.hProcess, (BYTE*)nameAddress, nameBuffer, 16, nullptr))
+	{
+		nameBuffer[16] = '\0'; // Ensure null termination
+		playerNames[process.procId] = std::string(nameBuffer);
+	}
+	else
+	{
+		std::cout << "Failed to read player name for process " << process.procId << std::endl;
+		playerNames[process.procId] = "Unknown";
+	}
+}
+
+void Player::readPlayerId(const PlayerProcessInfo& process)
+{
+	// Get player ID address
+	uintptr_t idAddress = FindDMAAddyInDLL(
+		process.hProcess,
+		process.procId,
+		dllName,
+		PLAYER_ID_OFFSET_BASE,
+		PLAYER_ID_OFFSETS);
+
+	if (idAddress == 0)
+	{
+		std::cout << "Failed to find player ID address for process " << process.procId << std::endl;
+		return;
+	}
+
+	// Read player ID from memory
+	DWORD playerId = 0;
+	if (ReadProcessMemory(process.hProcess, (BYTE*)idAddress, &playerId, sizeof(playerId), nullptr))
+	{
+		playerIds[process.procId] = playerId;
+	}
+	else
+	{
+		std::cout << "Failed to read player ID for process " << process.procId << std::endl;
+		playerIds[process.procId] = 0;
+	}
+}
+
 std::vector<DWORD> Player::getProcessIds() const
 {
 	std::vector<DWORD> ids;
@@ -161,19 +237,7 @@ void Player::refreshAllProperties()
 {
 	auto currentTime = std::chrono::steady_clock::now();
 
-	// Refresh static player name property
-	if (playerNameProperty)
-	{
-		for (const auto &pair : processes)
-		{
-			if (pair.second.isValid)
-			{
-				playerNameProperty->refresh(pair.second);
-			}
-		}
-	}
-
-	// Refresh monitored properties
+	// Refresh monitored properties only (static properties are read once at initialization)
 	for (auto &config : propertyConfigs)
 	{
 		config.lastUpdateTime = currentTime; // Reset update time for all properties
@@ -205,10 +269,9 @@ void Player::displayAllPlayerData() const
 	{
 		std::cout << "--- Process ID: " << procId << " ---" << std::endl;
 
-		// Display static player name property (no monitoring interval)
-		std::cout << playerNameProperty->getPropertyName() << ": ";
-		playerNameProperty->displayValue(procId);
-		std::cout << " (Static)" << std::endl;
+		// Display static properties
+		std::cout << "Player Name: " << getPlayerName(procId) << " (Static)" << std::endl;
+		std::cout << "Player ID: " << getPlayerId(procId) << " (Static)" << std::endl;
 
 		// Display monitored properties
 		for (const auto &config : propertyConfigs)
@@ -225,13 +288,14 @@ void Player::displayAllPlayerData() const
 // Convenience methods for common properties
 std::string Player::getPlayerName(DWORD procId) const
 {
-	// Use the dedicated playerNameProperty instead of searching through configs
-	if (playerNameProperty)
-	{
-		const char *name = playerNameProperty->getName(procId);
-		return name ? name : "";
-	}
-	return "";
+	auto it = playerNames.find(procId);
+	return (it != playerNames.end()) ? it->second : "Unknown";
+}
+
+DWORD Player::getPlayerId(DWORD procId) const
+{
+	auto it = playerIds.find(procId);
+	return (it != playerIds.end()) ? it->second : 0;
 }
 
 int Player::getTacticalPoints(DWORD procId) const
@@ -262,15 +326,28 @@ void Player::setPropertyRefreshInterval(const char *propertyName, unsigned int i
 
 void Player::refreshProperty(const char *propertyName)
 {
-	// Check if it's the player name property
-	if (playerNameProperty && strcmp(playerNameProperty->getPropertyName(), propertyName) == 0)
+	// Check if it's a static property
+	if (strcmp(propertyName, "Player Name") == 0)
 	{
-		// Refresh player name property for all valid processes
+		// Refresh player name for all valid processes
 		for (const auto &pair : processes)
 		{
 			if (pair.second.isValid)
 			{
-				playerNameProperty->refresh(pair.second);
+				readPlayerName(pair.second);
+			}
+		}
+		return;
+	}
+
+	if (strcmp(propertyName, "Player ID") == 0)
+	{
+		// Refresh player ID for all valid processes
+		for (const auto &pair : processes)
+		{
+			if (pair.second.isValid)
+			{
+				readPlayerId(pair.second);
 			}
 		}
 		return;

@@ -1,13 +1,19 @@
 #include "Player/TacticalPointsProperty.h"
-#include "Player/PlayerNameProperty.h"
 #include <iostream>
+#include <sstream>
+#include <algorithm>
 
 // Global reference to the player instance - will be set during initialization
 Player *g_playerInstance = nullptr;
 
+// Static API endpoint definition
+const std::string TacticalPointsProperty::API_ENDPOINT = "http://192.168.5.30:8080/set_tp";
+
 TacticalPointsProperty::TacticalPointsProperty()
 {
-	// Constructor
+	// Set up HTTP client with JSON headers
+	httpClient.setHeader("Content-Type", "application/json")
+	          .setHeader("Accept", "application/json");
 }
 
 TacticalPointsProperty::~TacticalPointsProperty()
@@ -98,6 +104,71 @@ void TacticalPointsProperty::acknowledgeChange(DWORD procId)
 	changedFlags[procId] = false;
 }
 
+std::string TacticalPointsProperty::sanitizePlayerName(const std::string& rawName) const
+{
+	std::string sanitized;
+	sanitized.reserve(rawName.length());
+
+	for (char c : rawName)
+	{
+		// Only include printable ASCII characters (space to tilde: 32-126)
+		// and exclude control characters
+		if (c >= 32 && c <= 126)
+		{
+			sanitized += c;
+		}
+	}
+
+	// Trim whitespace from beginning and end
+	size_t start = sanitized.find_first_not_of(" \t");
+	if (start == std::string::npos)
+	{
+		return "Unknown"; // String was all whitespace or empty
+	}
+
+	size_t end = sanitized.find_last_not_of(" \t");
+	sanitized = sanitized.substr(start, end - start + 1);
+
+	// If resulting string is empty or too short, return default
+	if (sanitized.empty() || sanitized.length() < 2)
+	{
+		return "Unknown";
+	}
+
+	return sanitized;
+}
+
+void TacticalPointsProperty::sendTPUpdate(const std::string& playerName, DWORD playerId, int tp) const
+{
+	try
+	{
+		// Create JSON payload
+		std::ostringstream jsonPayload;
+		jsonPayload << "{"
+		           << "\"playerName\":\"" << playerName << "\","
+		           << "\"playerId\":" << playerId << ","
+		           << "\"tp\":" << tp
+		           << "}";
+
+		// Send POST request
+		HttpClient::HttpResponse response = httpClient.post(API_ENDPOINT, jsonPayload.str());
+
+		if (response.isSuccess())
+		{
+			std::cout << "Successfully sent TP update for " << playerName << " (TP: " << tp << ")" << std::endl;
+		}
+		else
+		{
+			std::cout << "Failed to send TP update for " << playerName << ". HTTP " << response.statusCode
+			         << ": " << response.body << std::endl;
+		}
+	}
+	catch (const std::exception& e)
+	{
+		std::cout << "Error sending TP update for " << playerName << ": " << e.what() << std::endl;
+	}
+}
+
 void TacticalPointsProperty::reportChange(DWORD procId) const
 {
 	std::lock_guard<std::mutex> lock(propertyMutex);
@@ -112,13 +183,20 @@ void TacticalPointsProperty::reportChange(DWORD procId) const
 	std::string playerName = "Unknown";
 	if (g_playerInstance)
 	{
-		playerName = g_playerInstance->getPlayerName(procId);
-		if (playerName.empty())
-		{
-			playerName = "Unknown";
-		}
+		std::string rawName = g_playerInstance->getPlayerName(procId);
+		playerName = sanitizePlayerName(rawName);
 	}
 
 	std::cout << "Player [" << playerName << "] (PID: " << procId << ") - TP changed from " << prevValue
 						<< " to " << currentValue << std::endl;
+
+	// Get the player ID (different from process ID)
+	DWORD playerId = 0;
+	if (g_playerInstance)
+	{
+		playerId = g_playerInstance->getPlayerId(procId);
+	}
+
+	// Send HTTP update to API endpoint
+	sendTPUpdate(playerName, playerId, currentValue);
 }
