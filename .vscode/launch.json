@@ -31,6 +31,68 @@
 				}
 			],
 			"preLaunchTask": "cppbuild: C/C++: g++.exe build active file"
+		},
+		{
+			"name": "Debug FFXIHelperService (CMake)",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/build/FFXIHelperService.exe",
+			"args": [],
+			"stopAtEntry": false,
+			"cwd": "${workspaceFolder}",
+			"environment": [
+				{
+					"name": "PATH",
+					"value": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				}
+			],
+			"externalConsole": false,
+			"MIMode": "gdb",
+			"miDebuggerPath": "C:\\msys64\\mingw32\\bin\\gdb.exe",
+			"setupCommands": [
+				{
+					"description": "Enable pretty-printing for gdb",
+					"text": "-enable-pretty-printing",
+					"ignoreFailures": true
+				},
+				{
+					"description": "Set Disassembly Flavor to Intel",
+					"text": "-gdb-set disassembly-flavor intel",
+					"ignoreFailures": true
+				}
+			],
+			"preLaunchTask": "CMake: Build"
+		},
+		{
+			"name": "Debug FFXIHelperService (CMake, executable)",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/build/FFXIHelperService_d.exe",
+			"args": [],
+			"stopAtEntry": false,
+			"cwd": "${workspaceFolder}",
+			"environment": [
+				{
+					"name": "PATH",
+					"value": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				}
+			],
+			"externalConsole": false,
+			"MIMode": "gdb",
+			"miDebuggerPath": "C:\\msys64\\mingw32\\bin\\gdb.exe",
+			"setupCommands": [
+				{
+					"description": "Enable pretty-printing for gdb",
+					"text": "-enable-pretty-printing",
+					"ignoreFailures": true
+				},
+				{
+					"description": "Set Disassembly Flavor to Intel",
+					"text": "-gdb-set disassembly-flavor intel",
+					"ignoreFailures": true
+				}
+			],
+			"preLaunchTask": "CMake: Build"
 		}
 	]
 }

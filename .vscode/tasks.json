@@ -20,14 +20,14 @@
 				"${fileDirname}\\Player\\TacticalPoints.cpp",
 				"${fileDirname}\\Player\\TacticalPointsProperty.cpp",
 				"-o",
-				"${fileDirname}\\${fileBasenameNoExtension}.exe"
+				"${fileDirname}\\${fileBasenameNoExtension}.exe",
+				"-lcurl"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}",
 				"env": {
 					"PATH": "C:\\msys64\\mingw32\\bin;${env:PATH}"
 				},
-				// Use cmd.exe as the shell for Windows
 				"shell": {
 					"executable": "cmd.exe",
 					"args": ["/c"]
@@ -38,6 +38,67 @@
 				"kind": "build",
 				"isDefault": true
 			}
+		},
+		{
+			"label": "CMake: Configure",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-B",
+				"build",
+				"-G",
+				"MinGW Makefiles",
+				"-DCMAKE_BUILD_TYPE=Debug",
+				"-DCMAKE_MAKE_PROGRAM=C:/msys64/mingw32/bin/mingw32-make.exe",
+				"-DCMAKE_C_COMPILER=C:/msys64/mingw32/bin/gcc.exe",
+				"-DCMAKE_CXX_COMPILER=C:/msys64/mingw32/bin/g++.exe"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"env": {
+					"PATH": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				}
+			},
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "CMake: Build",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build",
+				"--config",
+				"Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"env": {
+					"PATH": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				}
+			},
+			"group": "build",
+			"problemMatcher": ["$gcc"],
+			"dependsOn": "CMake: Configure"
+		},
+		{
+			"label": "CMake: Clean",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build",
+				"--target",
+				"clean"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"env": {
+					"PATH": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				}
+			},
+			"group": "build"
 		}
 	]
 }

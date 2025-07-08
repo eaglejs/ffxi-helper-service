@@ -6,9 +6,12 @@
       "generator": "MinGW Makefiles",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_MAKE_PROGRAM": "mingw32-make",
-        "CMAKE_C_COMPILER": "gcc",
-        "CMAKE_CXX_COMPILER": "g++"
+        "CMAKE_MAKE_PROGRAM": "C:/msys64/mingw32/bin/mingw32-make.exe",
+        "CMAKE_C_COMPILER": "C:/msys64/mingw32/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/msys64/mingw32/bin/g++.exe"
+      },
+      "environment": {
+        "PATH": "C:/msys64/mingw32/bin;$penv{PATH}"
       }
     }
   ]
