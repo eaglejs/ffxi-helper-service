@@ -15,7 +15,6 @@
 				"${fileDirname}\\helpers\\memory.cpp",
 				"${fileDirname}\\helpers\\http.cpp",
 				"${fileDirname}\\Player\\Player.cpp",
-				"${fileDirname}\\Player\\PlayerNameProperty.cpp",
 				"${fileDirname}\\Player\\PlayerName.cpp",
 				"${fileDirname}\\Player\\TacticalPoints.cpp",
 				"${fileDirname}\\Player\\TacticalPointsProperty.cpp",
