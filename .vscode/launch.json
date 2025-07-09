@@ -5,7 +5,7 @@
 			"name": "Debug FFXIHelperService (CMake)",
 			"type": "cppdbg",
 			"request": "launch",
-			"program": "${workspaceFolder}/build/FFXIHelperService.exe",
+			"program": "${workspaceFolder}/build/FFXIHelperService_d.exe",
 			"args": [],
 			"stopAtEntry": false,
 			"cwd": "${workspaceFolder}",
