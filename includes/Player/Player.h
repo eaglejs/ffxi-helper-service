@@ -48,6 +48,8 @@ private:
     static const std::vector<unsigned int> PLAYER_NAME_OFFSETS;
     static const DWORD PLAYER_ID_OFFSET_BASE = 0x000106BC;
     static const std::vector<unsigned int> PLAYER_ID_OFFSETS;
+		static const DWORD PLAYER_CONQUEST_OFFSET_BASE = 0x001E646C;
+		static const std::vector<unsigned int> PLAYER_CONQUEST_OFFSETS;
 
     // Monitoring thread control
     std::thread monitorThread;
