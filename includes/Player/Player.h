@@ -44,7 +44,7 @@ private:
     std::map<DWORD, DWORD> playerIds;
 
     // Static property memory addresses
-    static const DWORD PLAYER_NAME_OFFSET_BASE = 0x000EA53C;
+    static const DWORD PLAYER_NAME_OFFSET_BASE = 0x004DBA94;
     static const std::vector<unsigned int> PLAYER_NAME_OFFSETS;
     static const DWORD PLAYER_ID_OFFSET_BASE = 0x000106BC;
     static const std::vector<unsigned int> PLAYER_ID_OFFSETS;

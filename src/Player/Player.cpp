@@ -10,7 +10,7 @@
 std::map<DWORD, PlayerProcessInfo> Player::processes;
 
 // Static property offset definitions
-const std::vector<unsigned int> Player::PLAYER_NAME_OFFSETS = {0x314};
+const std::vector<unsigned int> Player::PLAYER_NAME_OFFSETS = {0xA4};
 const std::vector<unsigned int> Player::PLAYER_ID_OFFSETS = {0x4E0};
 
 // For TacticalPointsProperty to access player names
