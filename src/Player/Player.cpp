@@ -206,6 +206,132 @@ void Player::readPlayerId(const PlayerProcessInfo& process)
 	}
 }
 
+// Process lifecycle management methods
+bool Player::isProcessAlive(DWORD procId) const
+{
+	auto it = processes.find(procId);
+	if (it == processes.end() || !it->second.isValid)
+	{
+		return false;
+	}
+
+	// Check if process is still running by trying to query its exit code
+	DWORD exitCode;
+	if (GetExitCodeProcess(it->second.hProcess, &exitCode))
+	{
+		return (exitCode == STILL_ACTIVE);
+	}
+
+	return false;
+}
+
+void Player::cleanupDeadProcess(DWORD procId)
+{
+	std::lock_guard<std::mutex> lock(processMutex);
+
+	auto it = processes.find(procId);
+	if (it != processes.end())
+	{
+		std::cout << "Cleaning up dead process " << procId << std::endl;
+
+		// Close handle if it exists
+		if (it->second.hProcess != NULL)
+		{
+			CloseHandle(it->second.hProcess);
+		}
+
+		// Remove from processes map
+		processes.erase(it);
+
+		// Remove from player names and IDs maps
+		playerNames.erase(procId);
+		playerIds.erase(procId);
+	}
+}
+
+void Player::checkForDeadProcesses()
+{
+	std::vector<DWORD> deadProcesses;
+
+	// First pass: identify dead processes
+	for (const auto& pair : processes)
+	{
+		if (!isProcessAlive(pair.first))
+		{
+			deadProcesses.push_back(pair.first);
+		}
+	}
+
+	// Second pass: clean up dead processes
+	for (DWORD deadProcId : deadProcesses)
+	{
+		cleanupDeadProcess(deadProcId);
+	}
+}
+
+void Player::checkForNewProcesses()
+{
+	// Find all current pol.exe processes
+	std::vector<DWORD> currentProcIds = FindProcesses(false, procName);
+
+	// Check each current process to see if it's new
+	for (DWORD procId : currentProcIds)
+	{
+		// Skip if we already have this process
+		if (processes.find(procId) != processes.end())
+		{
+			continue;
+		}
+
+		std::cout << "Found new process " << procId << ", initializing..." << std::endl;
+
+		// Initialize new process
+		PlayerProcessInfo info;
+		info.procId = procId;
+		info.isValid = false;
+
+		// Open process handle
+		info.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, procId);
+		if (info.hProcess == NULL)
+		{
+			std::cout << "Failed to open new process " << procId << "! Skipping..." << std::endl;
+			continue;
+		}
+
+		// Get module base address
+		info.moduleBase = GetModuleBaseAddress(procId, procName);
+		if (info.moduleBase == 0)
+		{
+			std::cout << "Module base address not found for new process " << procId << "! Skipping..." << std::endl;
+			CloseHandle(info.hProcess);
+			continue;
+		}
+
+		// Get DLL base address
+		info.dllBase = GetDLLBaseAddress(procId, dllName);
+		if (info.dllBase == 0)
+		{
+			std::cout << "DLL base address not found for new process " << procId << "! Skipping..." << std::endl;
+			CloseHandle(info.hProcess);
+			continue;
+		}
+
+		// Process is valid
+		info.isValid = true;
+
+		{
+			std::lock_guard<std::mutex> lock(processMutex);
+			processes[procId] = info;
+		}
+
+		// Read static properties for the new process
+		readPlayerName(info);
+		readPlayerId(info);
+
+		std::cout << "Successfully initialized new process " << procId << std::endl;
+	}
+}
+
 std::vector<DWORD> Player::getProcessIds() const
 {
 	std::vector<DWORD> ids;
@@ -422,9 +548,21 @@ void Player::monitorPropertiesThread()
 {
 	std::cout << "Monitoring thread started" << std::endl;
 
+	// Track time for process lifecycle checks
+	auto lastProcessCheckTime = std::chrono::steady_clock::now();
+	const auto processCheckInterval = std::chrono::seconds(5); // Check for dead/new processes every 5 seconds
+
 	while (monitoringActive)
 	{
 		auto currentTime = std::chrono::steady_clock::now();
+
+		// Periodically check for dead processes and new processes
+		if (currentTime - lastProcessCheckTime >= processCheckInterval)
+		{
+			checkForDeadProcesses();
+			checkForNewProcesses();
+			lastProcessCheckTime = currentTime;
+		}
 
 		// Check each property if it's time to update
 		for (auto &config : propertyConfigs)

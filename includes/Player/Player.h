@@ -60,6 +60,12 @@ private:
     // Process initialization
     void initializeProcesses();
 
+    // Process lifecycle management
+    void checkForDeadProcesses();
+    void checkForNewProcesses();
+    void cleanupDeadProcess(DWORD procId);
+    bool isProcessAlive(DWORD procId) const;
+
     // Static property reading
     void readStaticProperties();
     void readPlayerName(const PlayerProcessInfo& process);
