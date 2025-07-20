@@ -329,6 +329,8 @@ void Player::checkForNewProcesses()
 		readPlayerId(info);
 
 		std::cout << "Successfully initialized new process " << procId << std::endl;
+		std::cout << "[DEBUG] New process player name: '" << getPlayerName(procId) << "'" << std::endl;
+		std::cout << "[DEBUG] New process player ID: " << getPlayerId(procId) << std::endl;
 	}
 }
 

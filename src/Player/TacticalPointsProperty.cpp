@@ -142,6 +142,9 @@ void TacticalPointsProperty::sendTPUpdate(const std::string& playerName, DWORD p
 {
 	try
 	{
+		std::cout << "[DEBUG] Attempting to send TP update for player: " << playerName
+		         << ", playerId: " << playerId << ", TP: " << tp << std::endl;
+
 		// Create JSON payload
 		std::ostringstream jsonPayload;
 		jsonPayload << "{"
@@ -150,8 +153,20 @@ void TacticalPointsProperty::sendTPUpdate(const std::string& playerName, DWORD p
 		           << "\"tp\":" << tp
 		           << "}";
 
+		std::cout << "[DEBUG] JSON payload: " << jsonPayload.str() << std::endl;
+		std::cout << "[DEBUG] Sending POST to: " << API_ENDPOINT << std::endl;
+
+		// Create a fresh HttpClient for this request to avoid any state issues
+		HttpClient freshClient;
+		freshClient.setHeader("Content-Type", "application/json")
+		          .setHeader("Accept", "application/json")
+		          .setTimeout(10); // 10 second timeout
+
 		// Send POST request
-		HttpClient::HttpResponse response = httpClient.post(API_ENDPOINT, jsonPayload.str());
+		HttpClient::HttpResponse response = freshClient.post(API_ENDPOINT, jsonPayload.str());
+
+		std::cout << "[DEBUG] HTTP Response - Status Code: " << response.statusCode << std::endl;
+		std::cout << "[DEBUG] HTTP Response - Body: " << response.body << std::endl;
 
 		if (response.isSuccess())
 		{
@@ -179,12 +194,17 @@ void TacticalPointsProperty::reportChange(DWORD procId) const
 	int currentValue = (currentIt != tacticalPoints.end()) ? currentIt->second : 0;
 	int prevValue = (previousIt != previousTP.end()) ? previousIt->second : 0;
 
+	std::cout << "[DEBUG] reportChange called for procId: " << procId << std::endl;
+	std::cout << "[DEBUG] g_playerInstance: " << (g_playerInstance ? "Valid" : "NULL") << std::endl;
+
 	// Get the player name if possible
 	std::string playerName = "Unknown";
 	if (g_playerInstance)
 	{
 		std::string rawName = g_playerInstance->getPlayerName(procId);
+		std::cout << "[DEBUG] Raw player name: '" << rawName << "'" << std::endl;
 		playerName = sanitizePlayerName(rawName);
+		std::cout << "[DEBUG] Sanitized player name: '" << playerName << "'" << std::endl;
 	}
 
 	std::cout << "Player [" << playerName << "] (PID: " << procId << ") - TP changed from " << prevValue
@@ -195,6 +215,7 @@ void TacticalPointsProperty::reportChange(DWORD procId) const
 	if (g_playerInstance)
 	{
 		playerId = g_playerInstance->getPlayerId(procId);
+		std::cout << "[DEBUG] Player ID: " << playerId << std::endl;
 	}
 
 	// Send HTTP update to API endpoint
