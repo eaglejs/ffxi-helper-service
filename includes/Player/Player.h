@@ -85,6 +85,7 @@ public:
     void setPropertyRefreshInterval(const char* propertyName, unsigned int intervalMs);
     void refreshAllProperties();
     void refreshProperty(const char* propertyName);
+    void forceRefreshStaticProperties(); // Force refresh player names and IDs for all processes
 
     // Monitoring control
     void startMonitoring();

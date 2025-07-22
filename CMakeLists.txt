@@ -29,6 +29,7 @@ set(SOURCES
     src/helpers/http.cpp
     src/Player/Player.cpp
     src/Player/TacticalPointsProperty.cpp
+    src/Player/EliteAPI.cpp
 )
 
 # Header files (optional, for IDE support)
@@ -37,10 +38,12 @@ set(HEADERS
     includes/helpers/http.h
     includes/Player/Player.h
     includes/Player/TacticalPointsProperty.h
+    includes/Player/EliteAPI.h
+    includes/Player/PlayerStats.h
 )
 
 # Create the executable
-add_executable(FFXIHelperService ${SOURCES} ${HEADERS})
+add_executable(FFXIHelperService ${SOURCES})
 
 # Set compile options
 if(MSVC)
@@ -56,4 +59,15 @@ target_link_libraries(FFXIHelperService PRIVATE CURL::libcurl)
 # Set debug symbols for Debug builds
 set_target_properties(FFXIHelperService PROPERTIES
     DEBUG_POSTFIX "_d"
+)
+
+# Copy Elite API DLLs to output directory (if they exist)
+add_custom_command(TARGET FFXIHelperService POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/libs/elite/EliteAPI.dll"
+        "$<TARGET_FILE_DIR:FFXIHelperService>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/libs/elite/EliteMMO.API.dll"
+        "$<TARGET_FILE_DIR:FFXIHelperService>"
+    COMMENT "Copying Elite API DLLs to output directory"
 )

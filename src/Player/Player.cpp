@@ -160,6 +160,7 @@ void Player::readPlayerName(const PlayerProcessInfo& process)
 	if (nameAddress == 0)
 	{
 		std::cout << "Failed to find player name address for process " << process.procId << std::endl;
+		playerNames[process.procId] = "Unknown";
 		return;
 	}
 
@@ -168,11 +169,59 @@ void Player::readPlayerName(const PlayerProcessInfo& process)
 	if (ReadProcessMemory(process.hProcess, (BYTE*)nameAddress, nameBuffer, 16, nullptr))
 	{
 		nameBuffer[16] = '\0'; // Ensure null termination
-		playerNames[process.procId] = std::string(nameBuffer);
+
+		// Validate that we got a reasonable player name
+		std::string rawName(nameBuffer);
+
+		// Check if the name contains only printable characters and isn't empty
+		bool validName = !rawName.empty() && rawName.length() > 1;
+		for (char c : rawName)
+		{
+			if (c != 0 && (c < 32 || c > 126))  // Non-printable character
+			{
+				validName = false;
+				break;
+			}
+			if (c == 0) break; // Null terminator, stop checking
+		}
+
+		if (validName)
+		{
+			// Trim null characters and whitespace
+			size_t actualLength = rawName.find('\0');
+			if (actualLength != std::string::npos)
+			{
+				rawName = rawName.substr(0, actualLength);
+			}
+
+			// Trim whitespace
+			size_t start = rawName.find_first_not_of(" \t");
+			if (start != std::string::npos)
+			{
+				size_t end = rawName.find_last_not_of(" \t");
+				rawName = rawName.substr(start, end - start + 1);
+			}
+
+			if (!rawName.empty() && rawName.length() > 1)
+			{
+				playerNames[process.procId] = rawName;
+				std::cout << "Successfully read player name: '" << rawName << "' for process " << process.procId << std::endl;
+			}
+			else
+			{
+				playerNames[process.procId] = "Unknown";
+				std::cout << "Player name was empty or too short for process " << process.procId << std::endl;
+			}
+		}
+		else
+		{
+			playerNames[process.procId] = "Unknown";
+			std::cout << "Invalid player name data for process " << process.procId << std::endl;
+		}
 	}
 	else
 	{
-		std::cout << "Failed to read player name for process " << process.procId << std::endl;
+		std::cout << "Failed to read player name memory for process " << process.procId << std::endl;
 		playerNames[process.procId] = "Unknown";
 	}
 }
@@ -190,6 +239,7 @@ void Player::readPlayerId(const PlayerProcessInfo& process)
 	if (idAddress == 0)
 	{
 		std::cout << "Failed to find player ID address for process " << process.procId << std::endl;
+		playerIds[process.procId] = 0;
 		return;
 	}
 
@@ -197,11 +247,21 @@ void Player::readPlayerId(const PlayerProcessInfo& process)
 	DWORD playerId = 0;
 	if (ReadProcessMemory(process.hProcess, (BYTE*)idAddress, &playerId, sizeof(playerId), nullptr))
 	{
-		playerIds[process.procId] = playerId;
+		// Validate that we got a reasonable player ID (should be non-zero)
+		if (playerId > 0)
+		{
+			playerIds[process.procId] = playerId;
+			std::cout << "Successfully read player ID: " << playerId << " for process " << process.procId << std::endl;
+		}
+		else
+		{
+			playerIds[process.procId] = 0;
+			std::cout << "Player ID was zero for process " << process.procId << " (may not be logged in yet)" << std::endl;
+		}
 	}
 	else
 	{
-		std::cout << "Failed to read player ID for process " << process.procId << std::endl;
+		std::cout << "Failed to read player ID memory for process " << process.procId << std::endl;
 		playerIds[process.procId] = 0;
 	}
 }
@@ -324,9 +384,49 @@ void Player::checkForNewProcesses()
 			processes[procId] = info;
 		}
 
-		// Read static properties for the new process
-		readPlayerName(info);
-		readPlayerId(info);
+		// Wait a moment for the process to stabilize (game might still be loading)
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+		// Read static properties for the new process with retry logic
+		int retryCount = 0;
+		const int maxRetries = 5;
+		bool successfullyReadData = false;
+
+		while (retryCount < maxRetries && !successfullyReadData)
+		{
+			readPlayerName(info);
+			readPlayerId(info);
+
+			// Check if we successfully read the data
+			std::string playerName = getPlayerName(procId);
+			DWORD playerId = getPlayerId(procId);
+
+			if (playerName != "Unknown" && playerName.length() > 1 && playerId != 0)
+			{
+				successfullyReadData = true;
+				std::cout << "Successfully read player data on attempt " << (retryCount + 1) << std::endl;
+			}
+			else
+			{
+				retryCount++;
+				if (retryCount < maxRetries)
+				{
+					std::cout << "Failed to read player data, retrying in 2 seconds... (Attempt " << retryCount << "/" << maxRetries << ")" << std::endl;
+					std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+				}
+			}
+		}
+
+		if (!successfullyReadData)
+		{
+			std::cout << "WARNING: Failed to read player data after " << maxRetries << " attempts. Process " << procId << " may not be fully loaded yet." << std::endl;
+		}
+
+		// Force refresh all properties for the new process
+		for (auto &config : propertyConfigs)
+		{
+			config.property->refresh(info);
+		}
 
 		std::cout << "Successfully initialized new process " << procId << std::endl;
 		std::cout << "[DEBUG] New process player name: '" << getPlayerName(procId) << "'" << std::endl;
@@ -512,6 +612,56 @@ void Player::refreshProperty(const char *propertyName)
 	}
 }
 
+void Player::forceRefreshStaticProperties()
+{
+	std::cout << "Force refreshing static properties for all processes..." << std::endl;
+
+	for (const auto &pair : processes)
+	{
+		if (pair.second.isValid)
+		{
+			std::cout << "Refreshing static properties for process " << pair.first << std::endl;
+
+			// Re-read player name and ID with retry logic
+			int retryCount = 0;
+			const int maxRetries = 3;
+			bool success = false;
+
+			while (retryCount < maxRetries && !success)
+			{
+				readPlayerName(pair.second);
+				readPlayerId(pair.second);
+
+				// Check if we got valid data
+				std::string playerName = getPlayerName(pair.first);
+				DWORD playerId = getPlayerId(pair.first);
+
+				if (playerName != "Unknown" && playerName.length() > 1)
+				{
+					success = true;
+					std::cout << "Successfully refreshed data for process " << pair.first
+					         << ": Name='" << playerName << "', ID=" << playerId << std::endl;
+				}
+				else
+				{
+					retryCount++;
+					if (retryCount < maxRetries)
+					{
+						std::cout << "Retry " << retryCount << " for process " << pair.first << std::endl;
+						std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+					}
+				}
+			}
+
+			if (!success)
+			{
+				std::cout << "WARNING: Failed to refresh data for process " << pair.first
+				         << " after " << maxRetries << " attempts" << std::endl;
+			}
+		}
+	}
+}
+
 void Player::startMonitoring()
 {
 	if (monitoringActive)
@@ -552,7 +702,7 @@ void Player::monitorPropertiesThread()
 
 	// Track time for process lifecycle checks
 	auto lastProcessCheckTime = std::chrono::steady_clock::now();
-	const auto processCheckInterval = std::chrono::seconds(5); // Check for dead/new processes every 5 seconds
+	const auto processCheckInterval = std::chrono::seconds(2); // Check for dead/new processes every 2 seconds
 
 	while (monitoringActive)
 	{
