@@ -27,9 +27,9 @@ public:
     void refresh(const PlayerProcessInfo& processInfo);
 
 private:
-    // Chat buffer memory address: FFXiMain.dll + 0x00128AD4 + 0x10
+    // Chat buffer memory address: FFXiMain.dll + 0x00128AD4 + 0x00 (base pointer has full message)
     static const DWORD CHAT_LOG_BASE = 0x00128AD4;
-    static const DWORD CHAT_LOG_OFFSET = 0x10;
+    static const DWORD CHAT_LOG_OFFSET = 0x00;  // Changed from 0x10 - base pointer contains complete messages
     static const int CHAT_BUFFER_SIZE = 4096; // Size to read
 
     // Track last chat content per process to detect changes

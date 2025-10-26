@@ -2,7 +2,9 @@
 #include "Player/Player.h"
 #include "helpers/memory.h"
 #include <iostream>
+#include <iomanip>
 #include <cstring>
+#include <cctype>
 #include <sstream>
 #include <Windows.h>
 
@@ -60,14 +62,14 @@ void ChatLogProperty::initializePatterns()
     chatPatterns.push_back({std::regex("[^>]+>>"), ChatMessageType::Tell});
     chatPatterns.push_back({std::regex(">>[^\\s]"), ChatMessageType::Tell});
 
-    // Unity: {Name} - match any characters between braces
-    chatPatterns.push_back({std::regex("^\\s*\\{[^}]+\\}"), ChatMessageType::Unity});
+    // Unity: {Name} - must contain at least one letter (not just numbers like {3})
+    chatPatterns.push_back({std::regex("^\\s*\\{[^}]*[A-Za-z][^}]*\\}"), ChatMessageType::Unity});
 
     // Say: Name : Message (must have space before and after colon)
     chatPatterns.push_back({std::regex("^\\s*[A-Za-z]+'?[A-Za-z]*\\s+:\\s+"), ChatMessageType::Say});
 
     // Drops: You find a
-    chatPatterns.push_back({std::regex("^You find a"), ChatMessageType::Drops});
+    chatPatterns.push_back({std::regex("You find a"), ChatMessageType::Drops});
 
     // Obtained: obtains a / Obtained key item:
     chatPatterns.push_back({std::regex("obtains a"), ChatMessageType::Obtained});
@@ -420,7 +422,7 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
         return;
     }
 
-    // Step 3: Add the offset to the dereferenced pointer
+    // Step 3: Read from base pointer (offset 0x00) - this contains the complete message
     uintptr_t chatAddress = chatPointer + CHAT_LOG_OFFSET;
 
     // Read chat buffer from memory
@@ -434,26 +436,35 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
         return;
     }
 
-    // Find the actual length (up to first null terminator)
+    // Find the length of the string (up to first null terminator)
     size_t bufferLength = 0;
     for (size_t i = 0; i < CHAT_BUFFER_SIZE; i++)
     {
-        if (chatBuffer[i] == '\0') break;
+        if (chatBuffer[i] == '\0')
+            break;
         bufferLength++;
+    }
+
+    if (bufferLength == 0)
+    {
+        // Empty buffer, nothing to process
+        return;
     }
 
     // Remove FFXI control characters (0x01-0x1F, 0x7F-0x9F) before conversion
     // These are formatting/color codes that interfere with text encoding
     std::string cleanedBuffer;
     cleanedBuffer.reserve(bufferLength);
+
     for (size_t i = 0; i < bufferLength; i++)
     {
-        unsigned char ch = static_cast<unsigned char>(chatBuffer[i]);
-        // Keep printable ASCII (0x20-0x7E) and high bytes (0xA0+) for potential Japanese
-        // Skip control characters (0x01-0x1F) and DEL/formatting (0x7F-0x9F)
-        if ((ch >= 0x20 && ch <= 0x7E) || ch >= 0xA0)
+        unsigned char c = (unsigned char)chatBuffer[i];
+
+        // Keep printable ASCII (0x20-0x7E) and high bytes for Japanese text (0xA0+)
+        // Remove control characters (0x01-0x1F) and extended control chars (0x7F-0x9F)
+        if ((c >= 0x20 && c <= 0x7E) || c >= 0xA0)
         {
-            cleanedBuffer.push_back(chatBuffer[i]);
+            cleanedBuffer += c;
         }
     }
 
@@ -467,6 +478,41 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
     if (start != std::string::npos && end != std::string::npos)
     {
         currentContent = currentContent.substr(start, end - start + 1);
+    }
+
+    // Remove duplicate starting character pattern (like "yYou" -> "You")
+    // FFXI sometimes prefixes messages with a duplicate of the first letter
+    if (currentContent.length() >= 2)
+    {
+        char first = currentContent[0];
+        char second = currentContent[1];
+        // Check if first two chars are same letter but different case, or both lowercase
+        if (first == second || (std::tolower(first) == std::tolower(second) && std::isupper(second)))
+        {
+            // Remove the duplicate first character
+            currentContent = currentContent.substr(1);
+        }
+    }
+
+    // Remove FFXI end-of-line markers (digit suffixes like .1, .2, etc. at the end)
+    // These appear to be FFXI's way of marking line endings
+    // We only remove the digit, keeping the period since it's legitimate punctuation
+    if (currentContent.length() >= 2)
+    {
+        size_t len = currentContent.length();
+        // Check if ends with .<digit>
+        if (len >= 2 && currentContent[len - 2] == '.' &&
+            currentContent[len - 1] >= '0' && currentContent[len - 1] <= '9')
+        {
+            // Remove only the digit, keep the period
+            currentContent = currentContent.substr(0, len - 1);
+            // Trim any trailing whitespace that might be left
+            end = currentContent.find_last_not_of(" \t\r\n");
+            if (end != std::string::npos)
+            {
+                currentContent = currentContent.substr(0, end + 1);
+            }
+        }
     }
 
     // Check if content has changed
