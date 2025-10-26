@@ -2,7 +2,10 @@
 
 #include <Windows.h>
 #include <memory>
+#include <functional>
+#include <vector>
 #include "Player/PlayerStats.h"
+#include "Player/ChatMessage.h"
 
 // Forward declaration
 class EliteAPIImpl;
@@ -51,4 +54,36 @@ public:
      * Cleanup and detach from process
      */
     void Cleanup();
+
+    // Chat monitoring methods
+    using ChatCallback = std::function<void(const ChatMessage&)>;
+
+    /**
+     * Register a callback function to be called when chat messages are received
+     * @param callback Function to call with each chat message
+     * @return true if callback was registered successfully
+     */
+    bool RegisterChatCallback(ChatCallback callback);
+
+    /**
+     * Unregister the chat callback
+     */
+    void UnregisterChatCallback();
+
+    /**
+     * Get recent chat messages
+     * @param count Maximum number of messages to retrieve
+     * @return Vector of recent chat messages
+     */
+    std::vector<ChatMessage> GetRecentChatMessages(int count = 50);
+
+    /**
+     * Start monitoring chat packets
+     */
+    void StartChatMonitoring();
+
+    /**
+     * Stop monitoring chat packets
+     */
+    void StopChatMonitoring();
 };

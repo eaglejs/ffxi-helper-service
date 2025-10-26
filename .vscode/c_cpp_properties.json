@@ -2,13 +2,18 @@
   "configurations": [
     {
       "name": "GCC",
-      "includePath": ["${workspaceFolder}/**"],
+      "includePath": [
+        "${workspaceFolder}/includes",
+        "${workspaceFolder}/build/vcpkg_installed/x86-windows/include",
+        "${workspaceFolder}/**"
+      ],
       "defines": ["_DEBUG", "UNICODE", "_UNICODE"],
       "windowsSdkVersion": "10.0.22000.0",
-      "compilerPath": "C:\\Program Files\\mingw64\\bin\\g++.exe",
+      "compilerPath": "C:\\msys64\\mingw32\\bin\\g++.exe",
       "cStandard": "c17",
       "cppStandard": "c++17",
-      "intelliSenseMode": "windows-gcc-x64"
+      "intelliSenseMode": "windows-gcc-x86",
+      "configurationProvider": "ms-vscode.cmake-tools"
     }
   ],
   "version": 4

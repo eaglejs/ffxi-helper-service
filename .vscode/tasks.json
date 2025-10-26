@@ -15,8 +15,6 @@
 				"${fileDirname}\\helpers\\memory.cpp",
 				"${fileDirname}\\helpers\\http.cpp",
 				"${fileDirname}\\Player\\Player.cpp",
-				"${fileDirname}\\Player\\PlayerName.cpp",
-				"${fileDirname}\\Player\\TacticalPoints.cpp",
 				"${fileDirname}\\Player\\TacticalPointsProperty.cpp",
 				"-o",
 				"${fileDirname}\\${fileBasenameNoExtension}.exe",
@@ -56,6 +54,10 @@
 				"cwd": "${workspaceFolder}",
 				"env": {
 					"PATH": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				},
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
 				}
 			},
 			"group": "build",
@@ -75,6 +77,10 @@
 				"cwd": "${workspaceFolder}",
 				"env": {
 					"PATH": "C:\\msys64\\mingw32\\bin;${env:PATH}"
+				},
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
 				}
 			},
 			"group": "build",
@@ -98,6 +104,24 @@
 				}
 			},
 			"group": "build"
+		},
+		{
+			"label": "Build with PowerShell",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-Command",
+				"$env:PATH='C:\\msys64\\mingw32\\bin;'+$env:PATH; cmake --build build --config Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": "build",
+			"problemMatcher": ["$gcc"],
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			}
 		}
 	]
 }

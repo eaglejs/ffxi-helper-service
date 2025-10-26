@@ -69,5 +69,7 @@
     "sstream": "cpp",
     "unordered_map": "cpp",
     "xhash": "cpp"
-  }
+  },
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "cmake.configureOnOpen": false
 }

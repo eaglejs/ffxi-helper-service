@@ -1,10 +1,62 @@
 #include <Windows.h>
 #include "Player/Player.h"
 #include "Player/TacticalPointsProperty.h"
+#include "Player/ChatLogProperty.h"
 #include "helpers/memory.h"
+#include "helpers/http.h"
 #include <iostream>
 #include <chrono>
 #include <thread>
+#include <sstream>
+#include <iomanip>
+
+// Helper function to escape strings for JSON
+std::string escapeJsonString(const std::string& input)
+{
+	std::ostringstream escaped;
+	for (unsigned char c : input)
+	{
+		// Skip or escape control characters (0x00-0x1F and 0x7F-0xFF)
+		if (c < 0x20 || c >= 0x7F)
+		{
+			// Skip FFXI control/color codes
+			continue;
+		}
+		else if (c == '"')
+		{
+			escaped << "\\\"";
+		}
+		else if (c == '\\')
+		{
+			escaped << "\\\\";
+		}
+		else if (c == '\b')
+		{
+			escaped << "\\b";
+		}
+		else if (c == '\f')
+		{
+			escaped << "\\f";
+		}
+		else if (c == '\n')
+		{
+			escaped << "\\n";
+		}
+		else if (c == '\r')
+		{
+			escaped << "\\r";
+		}
+		else if (c == '\t')
+		{
+			escaped << "\\t";
+		}
+		else
+		{
+			escaped << c;
+		}
+	}
+	return escaped.str();
+}
 
 // Initialize static members
 std::map<DWORD, PlayerProcessInfo> Player::processes;
@@ -17,7 +69,7 @@ const std::vector<unsigned int> Player::PLAYER_CONQUEST_OFFSETS = {0x8C};
 // For TacticalPointsProperty to access player names
 extern Player *g_playerInstance;
 
-Player::Player() : monitoringActive(false)
+Player::Player() : monitoringActive(false), chatMonitoringEnabled(false), shutdownChatMonitoring(false)
 {
 	// Set the global instance for properties to access
 	g_playerInstance = this;
@@ -118,7 +170,8 @@ void Player::initializeProcesses()
 
 		// Process is valid
 		info.isValid = true;
-		processes[currentProcId] = info;
+
+		processes[currentProcId] = std::move(info);
 
 		std::cout << "Successfully initialized process " << currentProcId << std::endl;
 	}
@@ -381,7 +434,7 @@ void Player::checkForNewProcesses()
 
 		{
 			std::lock_guard<std::mutex> lock(processMutex);
-			processes[procId] = info;
+			processes[procId] = std::move(info);
 		}
 
 		// Wait a moment for the process to stabilize (game might still be loading)
@@ -752,10 +805,305 @@ void Player::monitorPropertiesThread()
 			}
 		}
 
+		// If chat monitoring is enabled, refresh chat log
+		if (chatMonitoringEnabled && chatLogProperty)
+		{
+			for (const auto &pair : processes)
+			{
+				if (pair.second.isValid)
+				{
+					chatLogProperty->refresh(pair.second);
+				}
+			}
+		}
+
 		// Sleep for a short time to avoid CPU overuse
 		// Use a shorter interval than any property's update interval to ensure timely updates
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 
 	std::cout << "Monitoring thread stopped" << std::endl;
+}
+
+// Chat monitoring implementations
+void Player::enableChatMonitoring()
+{
+	chatMonitoringEnabled = true;
+
+	std::cout << "[Player] Enabling chat monitoring for all processes..." << std::endl;
+
+	// Create chat log property if not already done
+	if (!chatLogProperty)
+	{
+		chatLogProperty = std::make_shared<ChatLogProperty>();
+		chatLogProperty->RegisterCallback([this](DWORD procId, const ChatMessage& msg) {
+			this->onChatMessage(procId, msg);
+		});
+
+		std::cout << "[Player] Chat log property created for memory monitoring" << std::endl;
+	}
+
+	std::cout << "[Player] Chat monitoring enabled! Will read from memory every 100ms" << std::endl;
+}
+
+void Player::disableChatMonitoring()
+{
+	std::lock_guard<std::mutex> lock(processMutex);
+	chatMonitoringEnabled = false;
+	shutdownChatMonitoring = true;
+
+	std::cout << "[Player] Disabling chat monitoring..." << std::endl;
+
+	// Unregister chat callback
+	if (chatLogProperty)
+	{
+		chatLogProperty->UnregisterCallback();
+	}
+
+	// Wait for all debounce threads to finish
+	for (auto& [procId, thread] : chatDebounceThreads)
+	{
+		if (thread.joinable())
+		{
+			thread.join();
+		}
+	}
+	chatDebounceThreads.clear();
+
+	processChats.clear();
+	lastChatTime.clear();
+	shutdownChatMonitoring = false;
+
+	std::cout << "[Player] Chat monitoring disabled" << std::endl;
+}
+
+void Player::onChatMessage(DWORD procId, const ChatMessage& msg)
+{
+	// Skip UNKNOWN message types - don't store or send them
+	if (msg.type == ChatMessageType::Unknown)
+	{
+		std::cout << "[Chat] Skipping UNKNOWN message type: " << msg.message << std::endl;
+		return;
+	}
+
+	std::lock_guard<std::mutex> lock(chatMutex);
+
+	// Store message
+	processChats[procId].push_back(msg);
+
+	// Keep only last 100 messages per process
+	if (processChats[procId].size() > 100)
+	{
+		processChats[procId].pop_front();
+	}
+
+	std::cout << "[Chat] " << msg.sender << " (" << msg.getMessageTypeString()
+	          << "): " << msg.message << std::endl;
+
+	// Update last chat time for debouncing
+	lastChatTime[procId] = std::chrono::steady_clock::now();
+
+	// Start debounce thread if not already running
+	if (!debounceThreadRunning[procId])
+	{
+		// Start new debounce thread
+		std::cout << "[Chat] Starting new debounce thread for process " << procId << std::endl;
+		debounceThreadRunning[procId] = true;
+
+		std::thread([this, procId]() {
+			this->chatDebounceThread(procId);
+		}).detach(); // Detach so we don't need to manage thread lifecycle
+	}
+	else
+	{
+		std::cout << "[Chat] Debounce thread already running for process " << procId << std::endl;
+	}
+}
+
+std::vector<ChatMessage> Player::getRecentChatMessages(DWORD procId, int count)
+{
+	std::lock_guard<std::mutex> lock(chatMutex);
+
+	std::vector<ChatMessage> messages;
+
+	if (processChats.find(procId) != processChats.end())
+	{
+		auto& deque = processChats[procId];
+		int start = std::max(0, static_cast<int>(deque.size()) - count);
+
+		for (size_t i = start; i < deque.size(); i++)
+		{
+			messages.push_back(deque[i]);
+		}
+	}
+
+	return messages;
+}
+
+void Player::chatDebounceThread(DWORD procId)
+{
+	// Debounce period: wait for messages to stop arriving
+	const auto debounceDelay = std::chrono::milliseconds(500); // 500ms after last message
+
+	while (!shutdownChatMonitoring)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+		// Check if we have messages and if enough time has passed
+		bool shouldSend = false;
+		{
+			std::lock_guard<std::mutex> lock(chatMutex);
+
+			if (processChats.find(procId) == processChats.end() || processChats[procId].empty())
+			{
+				// No messages, clear flag and exit thread
+				debounceThreadRunning[procId] = false;
+				return;
+			}
+
+			auto now = std::chrono::steady_clock::now();
+			auto timeSinceLastMsg = now - lastChatTime[procId];
+
+			if (timeSinceLastMsg >= debounceDelay)
+			{
+				shouldSend = true;
+			}
+		}
+
+		if (shouldSend)
+		{
+			// Send the batch
+			std::vector<ChatMessage> batch;
+			{
+				std::lock_guard<std::mutex> lock(chatMutex);
+				for (const auto& msg : processChats[procId])
+				{
+					batch.push_back(msg);
+				}
+				processChats[procId].clear();
+			}
+
+			std::cout << "[Chat] Debounce complete, sending " << batch.size()
+			         << " messages for process " << procId << std::endl;
+
+			sendChatBatch(procId, batch);
+
+			// Clear flag and exit thread after sending
+			debounceThreadRunning[procId] = false;
+			return;
+		}
+	}
+
+	// If we exit due to shutdown, clear the flag
+	debounceThreadRunning[procId] = false;
+}
+
+void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage>& messages)
+{
+	if (messages.empty())
+	{
+		return;
+	}
+
+	// Get player info
+	std::string playerName = getPlayerName(procId);
+	DWORD playerId = getPlayerId(procId);
+
+	if (playerName.empty() || playerName == "Unknown" || playerId == 0)
+	{
+		std::cout << "[Chat] Skipping chat batch - player info not available for process " << procId << std::endl;
+		return;
+	}
+
+	try
+	{
+		// Group messages by type
+		std::map<std::string, std::vector<std::string>> messagesByType;
+
+		for (const auto& msg : messages)
+		{
+			std::string typeKey = msg.getMessageTypeString();
+			// Use the original raw content to preserve formatting
+			messagesByType[typeKey].push_back(msg.rawContent);
+		}
+
+		// Send each message type as a separate request
+		for (const auto& [messageType, msgList] : messagesByType)
+		{
+			// Build JSON payload matching your endpoint structure
+			// messages is an object with string keys starting from "1" (Lua convention)
+			std::ostringstream json;
+			json << "{"
+			     << "\"playerId\":" << playerId << ","
+			     << "\"playerName\":\"" << escapeJsonString(playerName) << "\","
+			     << "\"messageType\":\"" << escapeJsonString(messageType) << "\","
+			     << "\"messages\":{";
+
+			for (size_t i = 0; i < msgList.size(); i++)
+			{
+				if (i > 0) json << ",";
+				// Use 1-based indexing (Lua convention)
+				json << "\"" << (i + 1) << "\":\"" << escapeJsonString(msgList[i]) << "\"";
+			}
+
+			json << "}}";
+
+			// Send to your endpoint
+			HttpClient client;
+			client.setHeader("Content-Type", "application/json")
+			      .setHeader("Accept", "application/json")
+			      .setTimeout(10);
+
+			std::string endpoint = "http://192.168.5.30:8080/set_messages";
+
+			std::cout << "[Chat] Sending " << msgList.size() << " " << messageType
+			         << " messages for " << playerName << std::endl;
+			std::cout << "[Chat] JSON: " << json.str() << std::endl;
+
+			HttpClient::HttpResponse response = client.post(endpoint, json.str());
+
+			if (response.isSuccess())
+			{
+				std::cout << "[Chat] Successfully sent messages" << std::endl;
+			}
+			else
+			{
+				std::cout << "[Chat] Failed to send messages. HTTP " << response.statusCode
+				         << ": " << response.body << std::endl;
+			}
+		}
+	}
+	catch (const std::exception& e)
+	{
+		std::cout << "[Chat] Error sending chat batch: " << e.what() << std::endl;
+	}
+}
+
+void Player::sendChatMessagesToServer(DWORD procId)
+{
+	std::vector<ChatMessage> messages;
+
+	{
+		std::lock_guard<std::mutex> lock(chatMutex);
+
+		if (processChats.find(procId) == processChats.end() || processChats[procId].empty())
+		{
+			std::cout << "[Chat] No pending messages for process " << procId << std::endl;
+			return;
+		}
+
+		// Copy messages
+		for (const auto& msg : processChats[procId])
+		{
+			messages.push_back(msg);
+		}
+
+		processChats[procId].clear();
+	}
+
+	std::cout << "[Chat] Manually sending " << messages.size()
+	         << " messages for process " << procId << std::endl;
+
+	// Send immediately (not in background thread since this is manual)
+	sendChatBatch(procId, messages);
 }

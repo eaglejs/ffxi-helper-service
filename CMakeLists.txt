@@ -18,9 +18,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
 find_package(CURL REQUIRED)
+message(STATUS "CURL found: ${CURL_FOUND}")
+message(STATUS "CURL include dirs: ${CURL_INCLUDE_DIRS}")
+message(STATUS "CURL libraries: ${CURL_LIBRARIES}")
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/includes)
+include_directories(${CURL_INCLUDE_DIRS})
 
 # Source files
 set(SOURCES
@@ -29,7 +33,7 @@ set(SOURCES
     src/helpers/http.cpp
     src/Player/Player.cpp
     src/Player/TacticalPointsProperty.cpp
-    src/Player/EliteAPI.cpp
+    src/Player/ChatLogProperty.cpp
 )
 
 # Header files (optional, for IDE support)
@@ -37,8 +41,9 @@ set(HEADERS
     includes/helpers/memory.h
     includes/helpers/http.h
     includes/Player/Player.h
-    includes/Player/TacticalPointsProperty.h
-    includes/Player/EliteAPI.h
+    includes/Player/TacticalPointsProperty.cpp
+    includes/Player/ChatLogProperty.h
+    includes/Player/ChatMessage.h
     includes/Player/PlayerStats.h
 )
 
@@ -59,15 +64,4 @@ target_link_libraries(FFXIHelperService PRIVATE CURL::libcurl)
 # Set debug symbols for Debug builds
 set_target_properties(FFXIHelperService PROPERTIES
     DEBUG_POSTFIX "_d"
-)
-
-# Copy Elite API DLLs to output directory (if they exist)
-add_custom_command(TARGET FFXIHelperService POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/libs/elite/EliteAPI.dll"
-        "$<TARGET_FILE_DIR:FFXIHelperService>"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/libs/elite/EliteMMO.API.dll"
-        "$<TARGET_FILE_DIR:FFXIHelperService>"
-    COMMENT "Copying Elite API DLLs to output directory"
 )

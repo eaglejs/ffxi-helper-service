@@ -9,10 +9,13 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <deque>
 #include "memory.h"
+#include "Player/ChatMessage.h"
 
 // Forward declarations for property classes
 class PlayerProperty;
+class ChatLogProperty;
 
 // Core player data structure
 struct PlayerProcessInfo {
@@ -56,6 +59,20 @@ private:
     std::atomic<bool> monitoringActive;
     std::mutex processMutex;
     unsigned int defaultMonitoringIntervalMs = 100; // Default check every 100ms
+
+    // Chat monitoring
+    std::shared_ptr<ChatLogProperty> chatLogProperty; // Chat log property for memory reading
+    std::map<DWORD, std::deque<ChatMessage>> processChats;
+    std::mutex chatMutex;
+    bool chatMonitoringEnabled;
+    std::map<DWORD, std::chrono::steady_clock::time_point> lastChatTime;
+    std::map<DWORD, std::thread> chatDebounceThreads;
+    std::map<DWORD, bool> debounceThreadRunning; // Track if debounce thread is active
+    std::atomic<bool> shutdownChatMonitoring;
+
+    void onChatMessage(DWORD procId, const ChatMessage& msg);
+    void sendChatBatch(DWORD procId, const std::vector<ChatMessage>& messages);
+    void chatDebounceThread(DWORD procId);
 
     // Process initialization
     void initializeProcesses();
@@ -101,6 +118,12 @@ public:
 
     // TP property access (implemented directly for convenience)
     int getTacticalPoints(DWORD procId) const;
+
+    // Chat monitoring methods
+    void enableChatMonitoring();
+    void disableChatMonitoring();
+    std::vector<ChatMessage> getRecentChatMessages(DWORD procId, int count = 50);
+    void sendChatMessagesToServer(DWORD procId);
 
     // Debug/display
     void displayAllPlayerData() const;
