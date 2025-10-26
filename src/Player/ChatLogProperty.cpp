@@ -437,7 +437,6 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
     }
 
     // Find the length of the string (up to first null terminator)
-    // Note: FFXI multi-line messages may be truncated at line breaks
     size_t bufferLength = 0;
     for (size_t i = 0; i < CHAT_BUFFER_SIZE; i++)
     {
