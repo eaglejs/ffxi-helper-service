@@ -437,6 +437,7 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
     }
 
     // Find the length of the string (up to first null terminator)
+    // Note: FFXI multi-line messages may be truncated at line breaks
     size_t bufferLength = 0;
     for (size_t i = 0; i < CHAT_BUFFER_SIZE; i++)
     {
@@ -478,6 +479,28 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
     if (start != std::string::npos && end != std::string::npos)
     {
         currentContent = currentContent.substr(start, end - start + 1);
+    }
+
+    // Remove FFXI in-game timestamp prefix (e.g., "j[4:32:53pm] ")
+    // Pattern: starts with 'j' or other char, followed by [timestamp]
+    if (currentContent.length() > 0 && currentContent[0] == 'j' && currentContent.find('[') == 1)
+    {
+        size_t closeBracket = currentContent.find(']');
+        if (closeBracket != std::string::npos)
+        {
+            // Check if this looks like a timestamp by looking for colons
+            std::string potentialTimestamp = currentContent.substr(2, closeBracket - 2);
+            if (potentialTimestamp.find(':') != std::string::npos)
+            {
+                // Remove the timestamp prefix including the space after ]
+                size_t removeUntil = closeBracket + 1;
+                if (removeUntil < currentContent.length() && currentContent[removeUntil] == ' ')
+                {
+                    removeUntil++;
+                }
+                currentContent = currentContent.substr(removeUntil);
+            }
+        }
     }
 
     // Remove duplicate starting character pattern (like "yYou" -> "You")
