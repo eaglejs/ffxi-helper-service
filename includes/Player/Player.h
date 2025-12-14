@@ -16,6 +16,7 @@
 // Forward declarations for property classes
 class PlayerProperty;
 class ChatLogProperty;
+class EliteAPI;
 
 // Core player data structure
 struct PlayerProcessInfo {
@@ -61,7 +62,8 @@ private:
     unsigned int defaultMonitoringIntervalMs = 100; // Default check every 100ms
 
     // Chat monitoring
-    std::shared_ptr<ChatLogProperty> chatLogProperty; // Chat log property for memory reading
+    std::shared_ptr<ChatLogProperty> chatLogProperty; // Chat log property for memory reading (legacy)
+    std::map<DWORD, std::shared_ptr<EliteAPI>> eliteAPIInstances; // Elite API instances per process
     std::map<DWORD, std::deque<ChatMessage>> processChats;
     std::mutex chatMutex;
     bool chatMonitoringEnabled;

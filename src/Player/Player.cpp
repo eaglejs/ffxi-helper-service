@@ -2,6 +2,7 @@
 #include "Player/Player.h"
 #include "Player/TacticalPointsProperty.h"
 #include "Player/ChatLogProperty.h"
+#include "Player/EliteAPI.h"
 #include "helpers/memory.h"
 #include "helpers/http.h"
 #include <iostream>
@@ -346,6 +347,19 @@ void Player::cleanupDeadProcess(DWORD procId)
 	if (it != processes.end())
 	{
 		std::cout << "Cleaning up dead process " << procId << std::endl;
+
+		// Cleanup Elite API instance for this process
+		auto eliteIt = eliteAPIInstances.find(procId);
+		if (eliteIt != eliteAPIInstances.end())
+		{
+			if (eliteIt->second)
+			{
+				eliteIt->second->StopChatMonitoring();
+				eliteIt->second->Cleanup();
+			}
+			eliteAPIInstances.erase(eliteIt);
+			std::cout << "Cleaned up Elite API for dead process " << procId << std::endl;
+		}
 
 		// Close handle if it exists
 		if (it->second.hProcess != NULL)
@@ -830,9 +844,11 @@ void Player::enableChatMonitoring()
 {
 	chatMonitoringEnabled = true;
 
-	std::cout << "[Player] Enabling chat monitoring for all processes..." << std::endl;
+	std::cout << "[Player] Enabling chat monitoring..." << std::endl;
+	std::cout << "[Player] Note: Elite API GetChatLineRaw returns invalid pointers - using memory reading" << std::endl;
 
-	// Create chat log property if not already done
+	// Use ChatLogProperty for reliable memory reading
+	// Filters PARTY, LINKSHELL1, LINKSHELL2 messages correctly
 	if (!chatLogProperty)
 	{
 		chatLogProperty = std::make_shared<ChatLogProperty>();
@@ -843,7 +859,7 @@ void Player::enableChatMonitoring()
 		std::cout << "[Player] Chat log property created for memory monitoring" << std::endl;
 	}
 
-	std::cout << "[Player] Chat monitoring enabled! Will read from memory every 100ms" << std::endl;
+	std::cout << "[Player] Chat monitoring enabled with filtering for PARTY, LINKSHELL1, LINKSHELL2!" << std::endl;
 }
 
 void Player::disableChatMonitoring()
@@ -854,7 +870,19 @@ void Player::disableChatMonitoring()
 
 	std::cout << "[Player] Disabling chat monitoring..." << std::endl;
 
-	// Unregister chat callback
+	// Stop Elite API monitoring for all processes
+	for (auto& [procId, eliteAPI] : eliteAPIInstances)
+	{
+		if (eliteAPI)
+		{
+			eliteAPI->StopChatMonitoring();
+			eliteAPI->Cleanup();
+			std::cout << "[Player] Stopped Elite API monitoring for process " << procId << std::endl;
+		}
+	}
+	eliteAPIInstances.clear();
+
+	// Unregister chat callback from legacy method
 	if (chatLogProperty)
 	{
 		chatLogProperty->UnregisterCallback();

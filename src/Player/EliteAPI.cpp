@@ -6,13 +6,14 @@
 #include <deque>
 
 // Elite API function type definitions
-typedef void* (*CreateInstanceFunc)();
-typedef void (*DeleteInstanceFunc)(void*);
-typedef bool (*ReinitializeFunc)(void*);
-typedef int (*GetChatLineCountFunc)(void*);
-typedef const char* (*GetChatLineRawFunc)(void*, int);
-typedef void (*FlushCommandsFunc)(void*);
-typedef void (*SendStringFunc)(void*, const char*);
+// Testing different calling conventions - trying __cdecl (default C convention)
+typedef void* (__cdecl *CreateInstanceFunc)(DWORD);
+typedef void (__cdecl *DeleteInstanceFunc)(void*);
+typedef bool (__cdecl *ReinitializeFunc)(void*);
+typedef int (__cdecl *GetChatLineCountFunc)(void*);
+typedef const char* (__cdecl *GetChatLineRawFunc)(void*, int);
+typedef void (__cdecl *FlushCommandsFunc)(void*);
+typedef void (__cdecl *SendStringFunc)(void*, const char*);
 
 // Private implementation class to hide Elite API details
 class EliteAPIImpl
@@ -109,7 +110,7 @@ public:
         }
 
         // Create Elite API instance
-        eliteApiInstance = CreateInstance();
+        eliteApiInstance = CreateInstance(processId);  // Pass process ID
         if (!eliteApiInstance)
         {
             std::cout << "[EliteAPI] Failed to create Elite API instance" << std::endl;
@@ -226,7 +227,58 @@ public:
         }
 
         chatMonitoringActive = true;
-        lastProcessedChatLine = GetChatLineCount(eliteApiInstance);
+        int initialCount = GetChatLineCount(eliteApiInstance);
+        std::cout << "[EliteAPI] GetChatLineCount returned: " << initialCount << std::endl;
+
+        // Try reading different indices to find valid lines
+        if (initialCount > 0)
+        {
+            std::cout << "[EliteAPI] Testing GetChatLineRaw with various indices..." << std::endl;
+
+            // Test index 0
+            const char* test0 = GetChatLineRaw(eliteApiInstance, 0);
+            std::cout << "[EliteAPI] Index 0 pointer: " << (void*)test0 << std::endl;
+
+            // Test last index (count - 1)
+            const char* testLast = GetChatLineRaw(eliteApiInstance, initialCount - 1);
+            std::cout << "[EliteAPI] Index " << (initialCount - 1) << " pointer: " << (void*)testLast << std::endl;
+
+            // Test middle index
+            if (initialCount > 2)
+            {
+                int midIndex = initialCount / 2;
+                const char* testMid = GetChatLineRaw(eliteApiInstance, midIndex);
+                std::cout << "[EliteAPI] Index " << midIndex << " pointer: " << (void*)testMid << std::endl;
+            }
+
+            // Try a negative index (some APIs use this pattern)
+            const char* testNeg1 = GetChatLineRaw(eliteApiInstance, -1);
+            std::cout << "[EliteAPI] Index -1 pointer: " << (void*)testNeg1 << std::endl;
+
+            // Check if any returned valid pointers
+            for (int i = std::max(0, initialCount - 5); i < initialCount; i++)
+            {
+                const char* line = GetChatLineRaw(eliteApiInstance, i);
+                if (line && line != (const char*)0x1 && line != (const char*)0x0)
+                {
+                    std::cout << "[EliteAPI] Found valid line at index " << i << "!" << std::endl;
+                    try
+                    {
+                        size_t len = strlen(line);
+                        if (len > 0 && len < 1000)
+                        {
+                            std::cout << "[EliteAPI] Line content: " << line << std::endl;
+                            break;
+                        }
+                    }
+                    catch (...) {}
+                }
+            }
+        }
+
+        // Start from current count (won't process existing messages, only new ones)
+        lastProcessedChatLine = initialCount;
+        std::cout << "[EliteAPI] Will start processing from line: " << lastProcessedChatLine << std::endl;
 
         std::cout << "[EliteAPI] Started chat monitoring for process " << processId << std::endl;
         std::cout << "[EliteAPI] Current chat line count: " << lastProcessedChatLine << std::endl;
@@ -246,6 +298,14 @@ public:
 
                     int currentCount = GetChatLineCount(eliteApiInstance);
 
+                    // Sanity check for currentCount
+                    if (currentCount < 0 || currentCount > 10000)
+                    {
+                        std::cout << "[EliteAPI] Warning: Suspicious chat line count: " << currentCount << std::endl;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                        continue;
+                    }
+
                     // Debug: Show chat line count periodically
                     static int lastReportedCount = -1;
                     if (currentCount != lastReportedCount)
@@ -258,18 +318,57 @@ public:
                     // Process new chat lines
                     while (lastProcessedChatLine < currentCount && chatMonitoringActive)
                     {
-                        const char* rawLine = GetChatLineRaw(eliteApiInstance, lastProcessedChatLine);
-                        std::cout << "[EliteAPI DEBUG] Processing chat line " << lastProcessedChatLine << std::endl;
-                        if (rawLine && strlen(rawLine) > 0)
+                        std::cout << "[EliteAPI DEBUG] About to process chat line " << lastProcessedChatLine
+                                  << " (currentCount: " << currentCount << ")" << std::endl;
+
+                        const char* rawLine = nullptr;
+                        try
                         {
-                            std::cout << "[EliteAPI DEBUG] Raw chat line: " << rawLine << std::endl;
-                            ParseChatLine(rawLine);
+                            rawLine = GetChatLineRaw(eliteApiInstance, lastProcessedChatLine);
+                        }
+                        catch (...)
+                        {
+                            std::cout << "[EliteAPI DEBUG] Exception caught when calling GetChatLineRaw" << std::endl;
+                            lastProcessedChatLine++;
+                            continue;
+                        }
+
+                        std::cout << "[EliteAPI DEBUG] After GetChatLineRaw, lastProcessedChatLine is still: "
+                                  << lastProcessedChatLine << std::endl;
+
+                        std::cout << "[EliteAPI DEBUG] rawLine pointer: " << (void*)rawLine << std::endl;
+
+                        if (rawLine != nullptr)
+                        {
+                            // Check if we can safely read the string
+                            try
+                            {
+                                size_t len = strlen(rawLine);
+                                std::cout << "[EliteAPI DEBUG] Raw chat line length: " << len << std::endl;
+
+                                if (len > 0 && len < 10000) // Sanity check
+                                {
+                                    std::cout << "[EliteAPI DEBUG] Raw chat line [" << lastProcessedChatLine << "]: "
+                                              << rawLine << std::endl;
+                                    ParseChatLine(rawLine);
+                                }
+                                else
+                                {
+                                    std::cout << "[EliteAPI DEBUG] Suspicious line length: " << len << std::endl;
+                                }
+                            }
+                            catch (...)
+                            {
+                                std::cout << "[EliteAPI DEBUG] Exception when accessing raw line content" << std::endl;
+                            }
                         }
                         else
                         {
-                            std::cout << "[EliteAPI DEBUG] Empty or null chat line" << std::endl;
+                            std::cout << "[EliteAPI DEBUG] Null chat line at index " << lastProcessedChatLine << std::endl;
                         }
+
                         lastProcessedChatLine++;
+                        std::cout << "[EliteAPI DEBUG] Incremented lastProcessedChatLine to: " << lastProcessedChatLine << std::endl;
                     }
 
                     // Sleep briefly to avoid busy-waiting
@@ -342,7 +441,7 @@ public:
         }
         else if (line.find("[Linkshell]") != std::string::npos || line.find("<") != std::string::npos)
         {
-            msg.type = ChatMessageType::Linkshell;
+            msg.type = ChatMessageType::Linkshell1;
         }
         else if (line.find("[Yell]") != std::string::npos)
         {

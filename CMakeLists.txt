@@ -34,6 +34,7 @@ set(SOURCES
     src/Player/Player.cpp
     src/Player/TacticalPointsProperty.cpp
     src/Player/ChatLogProperty.cpp
+    src/Player/EliteAPI.cpp
 )
 
 # Header files (optional, for IDE support)

@@ -436,6 +436,55 @@ void ChatLogProperty::refresh(const PlayerProcessInfo& processInfo)
         return;
     }
 
+    // MEMORY ANALYSIS: Dump first 512 bytes to analyze structure
+    // Look for "AAAA" pattern to study memory layout
+    bool foundLorem = false;
+    for (size_t i = 0; i < CHAT_BUFFER_SIZE - 4; i++)
+    {
+        if (chatBuffer[i] == 'A' && chatBuffer[i+1] == 'A' && chatBuffer[i+2] == 'A' &&
+            chatBuffer[i+3] == 'A')
+        {
+            foundLorem = true;
+            break;
+        }
+    }
+
+    if (foundLorem)
+    {
+        std::cout << "\n========== MEMORY ANALYSIS: FOUND AAAA PATTERN ==========" << std::endl;
+        std::cout << "Chat Address: 0x" << std::hex << chatAddress << std::dec << std::endl;
+        std::cout << "Base Pointer: 0x" << std::hex << chatPointer << std::dec << std::endl;
+
+        // Dump first 512 bytes in hex + ASCII
+        for (size_t i = 0; i < 512 && i < CHAT_BUFFER_SIZE; i += 16)
+        {
+            // Print offset
+            std::cout << std::hex << std::setw(4) << std::setfill('0') << i << ": ";
+
+            // Print hex bytes
+            for (size_t j = 0; j < 16 && (i + j) < 512; j++)
+            {
+                unsigned char c = (unsigned char)chatBuffer[i + j];
+                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)c << " ";
+            }
+
+            // Print ASCII representation
+            std::cout << " | ";
+            for (size_t j = 0; j < 16 && (i + j) < 512; j++)
+            {
+                unsigned char c = (unsigned char)chatBuffer[i + j];
+                if (c >= 0x20 && c <= 0x7E)
+                    std::cout << c;
+                else if (c == 0x00)
+                    std::cout << ".";
+                else
+                    std::cout << "?";
+            }
+            std::cout << std::dec << std::endl;
+        }
+        std::cout << "========== END MEMORY DUMP ==========" << std::endl << std::endl;
+    }
+
     // Find the length of the string (up to first null terminator)
     size_t bufferLength = 0;
     for (size_t i = 0; i < CHAT_BUFFER_SIZE; i++)
