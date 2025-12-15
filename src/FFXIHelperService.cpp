@@ -2,79 +2,191 @@
 #include <TlHelp32.h>
 #include <iostream>
 #include <thread>
+#include <chrono>
+#include <csignal>
+#include <atomic>
 
 #include "Player/Player.h"
+#include "helpers/logger.h"
+
+// Global flag for handling Ctrl+C
+std::atomic<bool> g_running(true);
+
+void signalHandler(int signal)
+{
+	if (signal == SIGINT || signal == SIGTERM)
+	{
+		LOG("SIGNAL", "Shutdown signal received");
+		std::cout << "\nShutting down gracefully..." << std::endl;
+		g_running = false;
+	}
+}
 
 int main()
 {
-	std::cout << "Starting FFXI Helper Service..." << std::endl; // Good breakpoint location
+	// Initialize logger FIRST
+	LOG_INIT();
+	LOG("MAIN", "==========================================");
+	LOG("MAIN", "FFXI Helper Service Starting");
+	LOG("MAIN", "==========================================");
+	LOG_FLUSH();
 
-	// Create the player manager
-	Player player;
+	// Register signal handlers
+	LOG("MAIN", "Registering signal handlers");
+	signal(SIGINT, signalHandler);
+	signal(SIGTERM, signalHandler);
+	LOG_FLUSH();
 
-	// Enable chat monitoring
-	std::cout << "Enabling chat monitoring..." << std::endl;
-	player.enableChatMonitoring();
-	std::cout << "Chat monitoring enabled! Messages will be sent to http://192.168.5.30:8080/set_messages" << std::endl;
+	try
+	{
+		LOG("MAIN", "Starting FFXI Helper Service...");
+		std::cout << "Starting FFXI Helper Service..." << std::endl;
+		LOG_FLUSH();
+
+		// Create the player manager
+		LOG("MAIN", "Creating Player instance");
+		LOG_FLUSH();
+		Player player;
+		LOG("MAIN", "Player instance created successfully");
+		LOG_FLUSH();
+
+		// Enable chat monitoring
+		LOG("MAIN", "Enabling chat monitoring...");
+		std::cout << "Enabling chat monitoring..." << std::endl;
+		std::cout.flush();
+		LOG_FLUSH();
+		
+		player.enableChatMonitoring();
+		
+		LOG("MAIN", "Chat monitoring enabled successfully");
+		std::cout << "Chat monitoring ENABLED for all game instances" << std::endl;
+		std::cout.flush();
+		LOG_FLUSH();
 
 	// Display all player data
-	std::cout << "Displaying player data..." << std::endl; // Another good breakpoint location
+	LOG("MAIN", "Displaying player data...");
+	std::cout << "Displaying player data..." << std::endl;
+	std::cout.flush();
+	LOG_FLUSH();
+	
 	player.displayAllPlayerData();
+	
+	LOG("MAIN", "Player data displayed successfully");
+	std::cout << "Player data displayed!" << std::endl;
+	std::cout.flush();
+	LOG_FLUSH();
 
 	// Interactive loop to allow commands
+	LOG("MAIN", "Starting interactive loop");
 	std::cout << "\nFFXI Helper Service is running..." << std::endl;
+	std::cout.flush();
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  r - Refresh player data" << std::endl;
 	std::cout << "  d - Display current data" << std::endl;
 	std::cout << "  c - Toggle chat monitoring" << std::endl;
 	std::cout << "  q - Quit" << std::endl;
-	std::cout << "Enter command: ";
+	std::cout << "\nPress Ctrl+C to exit" << std::endl;
+	std::cout << "\n[MAIN] Entering infinite loop..." << std::endl;
+	std::cout.flush();
+	LOG_FLUSH();
 
-	char command;
+	// Keep the service running indefinitely
 	bool chatMonitoringEnabled = true;
-	while (std::cin >> command)
+	int loopCount = 0;
+	LOG("MAIN", "g_running = " + std::to_string(g_running.load()));
+	std::cout << "[MAIN] g_running = " << g_running << std::endl;
+	std::cout.flush();
+	LOG_FLUSH();
+
+	// Give Elite API instances time to fully initialize before first poll
+	LOG("MAIN", "Waiting 1 second before starting chat polling...");
+	std::cout << "[MAIN] Waiting 1 second before starting chat polling..." << std::endl;
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+	LOG("MAIN", "Starting chat polling loop...");
+	std::cout << "[MAIN] Starting chat polling loop..." << std::endl;
+	std::cout.flush();
+	LOG_FLUSH();
+
+	while (g_running)
 	{
-		switch (command)
+		// Poll chat messages from all Elite API instances (main-thread polling to avoid DLL thread-safety issues)
+		try
 		{
-		case 'r':
-		case 'R':
-			std::cout << "Forcing refresh of all player data..." << std::endl;
-			player.forceRefreshStaticProperties();
-			player.displayAllPlayerData();
-			break;
-		case 'd':
-		case 'D':
-			std::cout << "Current player data:" << std::endl;
-			player.displayAllPlayerData();
-			break;
-		case 'c':
-		case 'C':
-			if (chatMonitoringEnabled)
+			if (loopCount % 10 == 0) // Log every 10th poll
 			{
-				std::cout << "Disabling chat monitoring..." << std::endl;
-				player.disableChatMonitoring();
-				chatMonitoringEnabled = false;
-				std::cout << "Chat monitoring disabled." << std::endl;
+				LOG("MAIN", "Polling chat messages (loop " + std::to_string(loopCount) + ")");
+				LOG_FLUSH();
 			}
-			else
+			
+			player.pollChatMessages();
+			
+			if (loopCount % 10 == 0)
 			{
-				std::cout << "Enabling chat monitoring..." << std::endl;
-				player.enableChatMonitoring();
-				chatMonitoringEnabled = true;
-				std::cout << "Chat monitoring enabled." << std::endl;
+				LOG("MAIN", "Poll completed successfully");
+				LOG_FLUSH();
 			}
-			break;
-		case 'q':
-		case 'Q':
-			std::cout << "Shutting down..." << std::endl;
-			return 0;
-		default:
-			std::cout << "Unknown command. Use r (refresh), d (display), or q (quit)" << std::endl;
-			break;
 		}
-		std::cout << "Enter command: ";
+		catch (const std::exception& e)
+		{
+			LOG_ERROR("MAIN", "chat poll", std::string(e.what()));
+			std::cout << "[MAIN] Exception during chat poll: " << e.what() << std::endl;
+			std::cout.flush();
+			LOG_FLUSH();
+		}
+		catch (...)
+		{
+			LOG_ERROR("MAIN", "chat poll", "Unknown exception");
+			std::cout << "[MAIN] Unknown exception during chat poll" << std::endl;
+			std::cout.flush();
+			LOG_FLUSH();
+		}
+
+		// Sleep to prevent CPU spinning (100ms = 10 polls per second)
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		loopCount++;
+
+		if (loopCount % 100 == 0) // Every 10 seconds
+		{
+			LOG("MAIN", "Service running (" + std::to_string(loopCount / 10) + "s)");
+			std::cout << "[MAIN] Service running (" << (loopCount / 10) << "s)" << std::endl;
+			std::cout.flush();
+			LOG_FLUSH();
+		}
 	}
 
-	std::cout << "Shutting down..." << std::endl; // Breakpoint to catch shutdown
+	LOG("MAIN", "Exiting main loop (g_running = " + std::to_string(g_running.load()) + ")");
+	std::cout << "\n[MAIN] Exiting main loop (g_running = " << g_running << ")..." << std::endl;
+	std::cout.flush();
+	LOG_FLUSH();
+	
+	std::cout << "Shutting down..." << std::endl;
+	LOG("MAIN", "Main function completed successfully");
+	LOG_FLUSH();
+	Logger::Close();
 	return 0;
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR("MAIN", "main", std::string(e.what()));
+		LOG_FLUSH();
+		std::cerr << "FATAL ERROR: " << e.what() << std::endl;
+		std::cerr << "Press Enter to exit..." << std::endl;
+		LOG("MAIN", "Waiting for user input before exit");
+		LOG_FLUSH();
+		Logger::Close();
+		std::cin.get();
+		return 1;
+	}
+	catch (...)
+	{
+		LOG_ERROR("MAIN", "main", "Unknown fatal exception");
+		LOG_FLUSH();
+		std::cerr << "FATAL ERROR: Unknown exception caught" << std::endl;
+		std::cerr << "Press Enter to exit..." << std::endl;
+		LOG("MAIN", "Waiting for user input before exit");
+		LOG_FLUSH();
+		Logger::Close();
+		std::cin.get();
+		return 1;
+	}
 }

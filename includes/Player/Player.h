@@ -124,6 +124,7 @@ public:
     // Chat monitoring methods
     void enableChatMonitoring();
     void disableChatMonitoring();
+    void pollChatMessages(); // Poll for new chat messages from all Elite API instances
     std::vector<ChatMessage> getRecentChatMessages(DWORD procId, int count = 50);
     void sendChatMessagesToServer(DWORD procId);
 

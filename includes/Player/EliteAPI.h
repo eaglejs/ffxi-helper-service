@@ -86,4 +86,11 @@ public:
      * Stop monitoring chat packets
      */
     void StopChatMonitoring();
+
+    /**
+     * Poll for new chat messages (call from main thread periodically)
+     * This should be called instead of using background threads to avoid DLL thread-safety issues
+     * @return Number of messages processed
+     */
+    int PollChatMessages();
 };

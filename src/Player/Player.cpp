@@ -5,6 +5,7 @@
 #include "Player/EliteAPI.h"
 #include "helpers/memory.h"
 #include "helpers/http.h"
+#include "helpers/logger.h"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -12,7 +13,7 @@
 #include <iomanip>
 
 // Helper function to escape strings for JSON
-std::string escapeJsonString(const std::string& input)
+std::string escapeJsonString(const std::string &input)
 {
 	std::ostringstream escaped;
 	for (unsigned char c : input)
@@ -80,18 +81,22 @@ Player::Player() : monitoringActive(false), chatMonitoringEnabled(false), shutdo
 	// Read static properties (name and ID) once
 	readStaticProperties();
 
-	// Register tactical points for continuous monitoring (update every 100ms)
-	registerProperty(std::make_shared<TacticalPointsProperty>(), 100);
+	// TEMPORARILY DISABLED: Register tactical points for continuous monitoring (update every 100ms)
+	// registerProperty(std::make_shared<TacticalPointsProperty>(), 100);
 
 	// Refresh all dynamic properties initially
 	refreshAllProperties();
 
-	// Start the monitoring thread
-	startMonitoring();
+	// TEMPORARILY DISABLED: Start the monitoring thread
+	// startMonitoring();
+	std::cout << "[Player] TP monitoring disabled for testing" << std::endl;
 }
 
 Player::~Player()
 {
+	std::cout << "[Player] Destructor called - cleaning up..." << std::endl;
+	std::cout.flush();
+
 	// Clear the global instance
 	if (g_playerInstance == this)
 	{
@@ -99,7 +104,11 @@ Player::~Player()
 	}
 
 	// Stop monitoring thread
+	std::cout << "[Player] Stopping monitoring..." << std::endl;
+	std::cout.flush();
 	stopMonitoring();
+	std::cout << "[Player] Monitoring stopped" << std::endl;
+	std::cout.flush();
 
 	// Clean up process handles
 	for (auto &pair : processes)
@@ -201,15 +210,15 @@ void Player::readStaticProperties()
 	}
 }
 
-void Player::readPlayerName(const PlayerProcessInfo& process)
+void Player::readPlayerName(const PlayerProcessInfo &process)
 {
 	// Get player name address
 	uintptr_t nameAddress = FindDMAAddyInDLL(
-		process.hProcess,
-		process.procId,
-		dllName,
-		PLAYER_NAME_OFFSET_BASE,
-		PLAYER_NAME_OFFSETS);
+			process.hProcess,
+			process.procId,
+			dllName,
+			PLAYER_NAME_OFFSET_BASE,
+			PLAYER_NAME_OFFSETS);
 
 	if (nameAddress == 0)
 	{
@@ -220,7 +229,7 @@ void Player::readPlayerName(const PlayerProcessInfo& process)
 
 	// Read player name from memory (assuming max 16 chars for FFXI names)
 	char nameBuffer[17] = {0}; // 16 chars + null terminator
-	if (ReadProcessMemory(process.hProcess, (BYTE*)nameAddress, nameBuffer, 16, nullptr))
+	if (ReadProcessMemory(process.hProcess, (BYTE *)nameAddress, nameBuffer, 16, nullptr))
 	{
 		nameBuffer[16] = '\0'; // Ensure null termination
 
@@ -231,12 +240,13 @@ void Player::readPlayerName(const PlayerProcessInfo& process)
 		bool validName = !rawName.empty() && rawName.length() > 1;
 		for (char c : rawName)
 		{
-			if (c != 0 && (c < 32 || c > 126))  // Non-printable character
+			if (c != 0 && (c < 32 || c > 126)) // Non-printable character
 			{
 				validName = false;
 				break;
 			}
-			if (c == 0) break; // Null terminator, stop checking
+			if (c == 0)
+				break; // Null terminator, stop checking
 		}
 
 		if (validName)
@@ -280,15 +290,15 @@ void Player::readPlayerName(const PlayerProcessInfo& process)
 	}
 }
 
-void Player::readPlayerId(const PlayerProcessInfo& process)
+void Player::readPlayerId(const PlayerProcessInfo &process)
 {
 	// Get player ID address
 	uintptr_t idAddress = FindDMAAddyInDLL(
-		process.hProcess,
-		process.procId,
-		dllName,
-		PLAYER_ID_OFFSET_BASE,
-		PLAYER_ID_OFFSETS);
+			process.hProcess,
+			process.procId,
+			dllName,
+			PLAYER_ID_OFFSET_BASE,
+			PLAYER_ID_OFFSETS);
 
 	if (idAddress == 0)
 	{
@@ -299,7 +309,7 @@ void Player::readPlayerId(const PlayerProcessInfo& process)
 
 	// Read player ID from memory
 	DWORD playerId = 0;
-	if (ReadProcessMemory(process.hProcess, (BYTE*)idAddress, &playerId, sizeof(playerId), nullptr))
+	if (ReadProcessMemory(process.hProcess, (BYTE *)idAddress, &playerId, sizeof(playerId), nullptr))
 	{
 		// Validate that we got a reasonable player ID (should be non-zero)
 		if (playerId > 0)
@@ -381,7 +391,7 @@ void Player::checkForDeadProcesses()
 	std::vector<DWORD> deadProcesses;
 
 	// First pass: identify dead processes
-	for (const auto& pair : processes)
+	for (const auto &pair : processes)
 	{
 		if (!isProcessAlive(pair.first))
 		{
@@ -707,7 +717,7 @@ void Player::forceRefreshStaticProperties()
 				{
 					success = true;
 					std::cout << "Successfully refreshed data for process " << pair.first
-					         << ": Name='" << playerName << "', ID=" << playerId << std::endl;
+										<< ": Name='" << playerName << "', ID=" << playerId << std::endl;
 				}
 				else
 				{
@@ -723,7 +733,7 @@ void Player::forceRefreshStaticProperties()
 			if (!success)
 			{
 				std::cout << "WARNING: Failed to refresh data for process " << pair.first
-				         << " after " << maxRetries << " attempts" << std::endl;
+									<< " after " << maxRetries << " attempts" << std::endl;
 			}
 		}
 	}
@@ -766,77 +776,101 @@ bool Player::isMonitoring() const
 void Player::monitorPropertiesThread()
 {
 	std::cout << "Monitoring thread started" << std::endl;
+	std::cout.flush();
 
 	// Track time for process lifecycle checks
 	auto lastProcessCheckTime = std::chrono::steady_clock::now();
 	const auto processCheckInterval = std::chrono::seconds(2); // Check for dead/new processes every 2 seconds
 
-	while (monitoringActive)
+	try
 	{
-		auto currentTime = std::chrono::steady_clock::now();
-
-		// Periodically check for dead processes and new processes
-		if (currentTime - lastProcessCheckTime >= processCheckInterval)
+		while (monitoringActive)
 		{
-			checkForDeadProcesses();
-			checkForNewProcesses();
-			lastProcessCheckTime = currentTime;
-		}
-
-		// Check each property if it's time to update
-		for (auto &config : propertyConfigs)
-		{
-			// Calculate elapsed time since last update
-			auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-													 currentTime - config.lastUpdateTime)
-													 .count();
-
-			// Check if it's time to refresh this property
-			if (elapsedMs >= config.monitoringIntervalMs)
+			try
 			{
-				// Update last refresh time
-				config.lastUpdateTime = currentTime;
+				auto currentTime = std::chrono::steady_clock::now();
 
-				// Refresh for all valid processes
-				for (const auto &pair : processes)
+				// Periodically check for dead processes and new processes
+				if (currentTime - lastProcessCheckTime >= processCheckInterval)
 				{
-					if (pair.second.isValid)
+					checkForDeadProcesses();
+					checkForNewProcesses();
+					lastProcessCheckTime = currentTime;
+				}
+
+				// Check each property if it's time to update
+				for (auto &config : propertyConfigs)
+				{
+					// Calculate elapsed time since last update
+					auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+															 currentTime - config.lastUpdateTime)
+															 .count();
+
+					// Check if it's time to refresh this property
+					if (elapsedMs >= config.monitoringIntervalMs)
 					{
-						// Refresh the property
-						config.property->refresh(pair.second);
+						// Update last refresh time
+						config.lastUpdateTime = currentTime;
 
-						// Check if the property has changed
-						if (config.property->hasChanged(pair.first))
+						// Refresh for all valid processes
+						for (const auto &pair : processes)
 						{
-							// Report the change
-							config.property->reportChange(pair.first);
+							if (pair.second.isValid)
+							{
+								try
+								{
+									// Refresh the property
+									config.property->refresh(pair.second);
 
-							// Acknowledge the change
-							config.property->acknowledgeChange(pair.first);
+									// Check if the property has changed
+									if (config.property->hasChanged(pair.first))
+									{
+										// Report the change
+										config.property->reportChange(pair.first);
+
+										// Acknowledge the change
+										config.property->acknowledgeChange(pair.first);
+									}
+								}
+								catch (const std::exception &e)
+								{
+									std::cout << "[Monitoring] Exception refreshing property for process " << pair.first << ": " << e.what() << std::endl;
+									std::cout.flush();
+								}
+								catch (...)
+								{
+									std::cout << "[Monitoring] Unknown exception refreshing property for process " << pair.first << std::endl;
+									std::cout.flush();
+								}
+							}
 						}
 					}
 				}
-			}
-		}
 
-		// If chat monitoring is enabled, refresh chat log
-		if (chatMonitoringEnabled && chatLogProperty)
-		{
-			for (const auto &pair : processes)
+				// Sleep for a short time to avoid CPU overuse
+				// Use a shorter interval than any property's update interval to ensure timely updates
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			}
+			catch (const std::exception &e)
 			{
-				if (pair.second.isValid)
-				{
-					chatLogProperty->refresh(pair.second);
-				}
+				std::cout << "[Monitoring] Exception in monitoring loop: " << e.what() << std::endl;
+				std::cout.flush();
+			}
+			catch (...)
+			{
+				std::cout << "[Monitoring] Unknown exception in monitoring loop" << std::endl;
+				std::cout.flush();
 			}
 		}
-
-		// Sleep for a short time to avoid CPU overuse
-		// Use a shorter interval than any property's update interval to ensure timely updates
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	catch (...)
+	{
+		std::cout << "[Monitoring] Fatal exception in monitoring thread" << std::endl;
+		std::cout.flush();
 	}
 
 	std::cout << "Monitoring thread stopped" << std::endl;
+	std::cout.flush();
 }
 
 // Chat monitoring implementations
@@ -844,22 +878,185 @@ void Player::enableChatMonitoring()
 {
 	chatMonitoringEnabled = true;
 
-	std::cout << "[Player] Enabling chat monitoring..." << std::endl;
-	std::cout << "[Player] Note: Elite API GetChatLineRaw returns invalid pointers - using memory reading" << std::endl;
+	std::cout << "[Player] Enabling chat monitoring using Elite API..." << std::endl;
 
-	// Use ChatLogProperty for reliable memory reading
-	// Filters PARTY, LINKSHELL1, LINKSHELL2 messages correctly
-	if (!chatLogProperty)
+	// Initialize Elite API instances for all active processes
+	// Stagger initialization to avoid overload
+	std::lock_guard<std::mutex> lock(processMutex);
+	int initCount = 0;
+
+	for (const auto &pair : processes)
 	{
-		chatLogProperty = std::make_shared<ChatLogProperty>();
-		chatLogProperty->RegisterCallback([this](DWORD procId, const ChatMessage& msg) {
-			this->onChatMessage(procId, msg);
-		});
+		if (pair.second.isValid)
+		{
+			DWORD procId = pair.first;
 
-		std::cout << "[Player] Chat log property created for memory monitoring" << std::endl;
+			// Check if Elite API instance already exists for this process
+			if (eliteAPIInstances.find(procId) == eliteAPIInstances.end())
+			{
+				try
+				{
+					std::cout << "[Player] Creating Elite API instance for process " << procId << "..." << std::endl;
+					std::cout.flush();
+
+					auto eliteAPI = std::make_shared<EliteAPI>();
+
+					std::cout << "[Player] Calling Initialize for process " << procId << "..." << std::endl;
+					std::cout.flush();
+					LOG("PLAYER", "About to call eliteAPI->Initialize(" + std::to_string(procId) + ")");
+					LOG_FLUSH();
+
+					bool initResult = false;
+					try {
+						initResult = eliteAPI->Initialize(procId);
+						LOG("PLAYER", "Initialize returned: " + std::string(initResult ? "true" : "false"));
+						LOG_FLUSH();
+					}
+					catch (const std::exception& e) {
+						LOG_ERROR("PLAYER", "Initialize", "Exception: " + std::string(e.what()));
+						LOG_FLUSH();
+						initResult = false;
+					}
+					catch (...) {
+						LOG_ERROR("PLAYER", "Initialize", "Unknown exception");
+						LOG_FLUSH();
+						initResult = false;
+					}
+
+					LOG("PLAYER", "After Initialize() try-catch block");
+					LOG_FLUSH();
+					LOG("PLAYER", "About to print initResult to console, value = " + std::string(initResult ? "true" : "false"));
+					LOG_FLUSH();
+					std::cout << "[Player] After Initialize call, result = " << initResult << std::endl;
+					std::cout.flush();
+					LOG("PLAYER", "Console output completed");
+					LOG_FLUSH();
+
+					if (initResult)
+					{
+						LOG("PLAYER", "initResult is true, entering success block");
+						LOG_FLUSH();
+						std::cout << "[Player] Initialize succeeded for process " << procId << std::endl;
+						std::cout.flush();
+						LOG("PLAYER", "About to register chat callback");
+						LOG_FLUSH();
+
+						// Register chat callback
+						eliteAPI->RegisterChatCallback([this, procId](const ChatMessage &msg)
+																					 { this->onChatMessage(procId, msg); });
+
+						LOG("PLAYER", "Chat callback registered, about to start monitoring");
+						LOG_FLUSH();
+						std::cout << "[Player] Calling StartChatMonitoring for process " << procId << "..." << std::endl;
+						std::cout.flush();
+						LOG("PLAYER", "About to call StartChatMonitoring");
+						LOG_FLUSH();
+
+						// Start chat monitoring
+						eliteAPI->StartChatMonitoring();
+
+						std::cout << "[Player] StartChatMonitoring completed for process " << procId << std::endl;
+						std::cout.flush();
+
+						eliteAPIInstances[procId] = eliteAPI;
+						std::cout << "[Player] Elite API chat monitoring started for process " << procId << std::endl;
+						std::cout.flush();
+
+						// Stagger initialization - small delay between processes
+						initCount++;
+						std::cout << "[Player] Initialized " << initCount << " Elite API instances" << std::endl;
+						std::cout.flush();
+
+						// Small delay to avoid overwhelming the DLL
+						std::cout << "[Player] Sleeping 200ms before next process..." << std::endl;
+						std::cout.flush();
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
+						std::cout << "[Player] Sleep completed" << std::endl;
+						std::cout.flush();
+					}
+					else
+					{
+						std::cout << "[Player] Failed to initialize Elite API for process " << procId << std::endl;
+					}
+				}
+				catch (const std::exception &e)
+				{
+					std::cout << "[Player] Exception initializing Elite API for process " << procId << ": " << e.what() << std::endl;
+					std::cout.flush();
+				}
+				catch (...)
+				{
+					std::cout << "[Player] Unknown exception initializing Elite API for process " << procId << std::endl;
+					std::cout.flush();
+				}
+			}
+		}
 	}
 
-	std::cout << "[Player] Chat monitoring enabled with filtering for PARTY, LINKSHELL1, LINKSHELL2!" << std::endl;
+	std::cout << "[Player] Chat monitoring enabled for " << eliteAPIInstances.size() << " processes!" << std::endl;
+	std::cout.flush(); // Force output to be written
+}
+
+void Player::pollChatMessages()
+{
+	if (!chatMonitoringEnabled)
+	{
+		return;
+	}
+
+	LOG("PLAYER", "pollChatMessages: Creating instance copy");
+	LOG_FLUSH();
+
+	// Create a copy of the map to avoid holding the lock during DLL calls
+	std::map<DWORD, std::shared_ptr<EliteAPI>> instancesCopy;
+	{
+		std::lock_guard<std::mutex> lock(processMutex);
+		instancesCopy = eliteAPIInstances;
+	}
+
+	LOG("PLAYER", "pollChatMessages: Polling " + std::to_string(instancesCopy.size()) + " instances");
+	LOG_FLUSH();
+
+	// Poll all Elite API instances for new messages (without holding the lock)
+	int totalMessages = 0;
+	for (auto &[procId, eliteAPI] : instancesCopy)
+	{
+		if (eliteAPI)
+		{
+			try
+			{
+				LOG("PLAYER", "Polling process " + std::to_string(procId));
+				LOG_FLUSH();
+				
+				int count = eliteAPI->PollChatMessages();
+				totalMessages += count;
+				
+				if (count > 0)
+				{
+					LOG("PLAYER", "Process " + std::to_string(procId) + " returned " + std::to_string(count) + " messages");
+					LOG_FLUSH();
+				}
+			}
+			catch (const std::exception& e)
+			{
+				LOG_ERROR("PLAYER", "pollChatMessages", "Exception polling process " + std::to_string(procId) + ": " + std::string(e.what()));
+				std::cout << "[Player] Exception polling process " << procId << ": " << e.what() << std::endl;
+				LOG_FLUSH();
+			}
+			catch (...)
+			{
+				LOG_ERROR("PLAYER", "pollChatMessages", "Unknown exception polling process " + std::to_string(procId));
+				std::cout << "[Player] Unknown exception polling process " << procId << std::endl;
+				LOG_FLUSH();
+			}
+		}
+	}
+
+	// Optional: Log only if messages were processed
+	// if (totalMessages > 0)
+	// {
+	//     std::cout << "[Player] Polled " << totalMessages << " new chat messages" << std::endl;
+	// }
 }
 
 void Player::disableChatMonitoring()
@@ -871,7 +1068,7 @@ void Player::disableChatMonitoring()
 	std::cout << "[Player] Disabling chat monitoring..." << std::endl;
 
 	// Stop Elite API monitoring for all processes
-	for (auto& [procId, eliteAPI] : eliteAPIInstances)
+	for (auto &[procId, eliteAPI] : eliteAPIInstances)
 	{
 		if (eliteAPI)
 		{
@@ -889,7 +1086,7 @@ void Player::disableChatMonitoring()
 	}
 
 	// Wait for all debounce threads to finish
-	for (auto& [procId, thread] : chatDebounceThreads)
+	for (auto &[procId, thread] : chatDebounceThreads)
 	{
 		if (thread.joinable())
 		{
@@ -905,7 +1102,7 @@ void Player::disableChatMonitoring()
 	std::cout << "[Player] Chat monitoring disabled" << std::endl;
 }
 
-void Player::onChatMessage(DWORD procId, const ChatMessage& msg)
+void Player::onChatMessage(DWORD procId, const ChatMessage &msg)
 {
 	// Skip UNKNOWN message types - don't store or send them
 	if (msg.type == ChatMessageType::Unknown)
@@ -925,8 +1122,11 @@ void Player::onChatMessage(DWORD procId, const ChatMessage& msg)
 		processChats[procId].pop_front();
 	}
 
-	std::cout << "[Chat] " << msg.sender << " (" << msg.getMessageTypeString()
-	          << "): " << msg.message << std::endl;
+	// Get player name for better logging
+	std::string playerName = getPlayerName(procId);
+	std::cout << "[Chat][" << playerName << " PID:" << procId << "] "
+						<< msg.sender << " (" << msg.getMessageTypeString()
+						<< "): " << msg.message << std::endl;
 
 	// Update last chat time for debouncing
 	lastChatTime[procId] = std::chrono::steady_clock::now();
@@ -938,9 +1138,9 @@ void Player::onChatMessage(DWORD procId, const ChatMessage& msg)
 		std::cout << "[Chat] Starting new debounce thread for process " << procId << std::endl;
 		debounceThreadRunning[procId] = true;
 
-		std::thread([this, procId]() {
-			this->chatDebounceThread(procId);
-		}).detach(); // Detach so we don't need to manage thread lifecycle
+		std::thread([this, procId]()
+								{ this->chatDebounceThread(procId); })
+				.detach(); // Detach so we don't need to manage thread lifecycle
 	}
 	else
 	{
@@ -956,7 +1156,7 @@ std::vector<ChatMessage> Player::getRecentChatMessages(DWORD procId, int count)
 
 	if (processChats.find(procId) != processChats.end())
 	{
-		auto& deque = processChats[procId];
+		auto &deque = processChats[procId];
 		int start = std::max(0, static_cast<int>(deque.size()) - count);
 
 		for (size_t i = start; i < deque.size(); i++)
@@ -1004,7 +1204,7 @@ void Player::chatDebounceThread(DWORD procId)
 			std::vector<ChatMessage> batch;
 			{
 				std::lock_guard<std::mutex> lock(chatMutex);
-				for (const auto& msg : processChats[procId])
+				for (const auto &msg : processChats[procId])
 				{
 					batch.push_back(msg);
 				}
@@ -1012,7 +1212,7 @@ void Player::chatDebounceThread(DWORD procId)
 			}
 
 			std::cout << "[Chat] Debounce complete, sending " << batch.size()
-			         << " messages for process " << procId << std::endl;
+								<< " messages for process " << procId << std::endl;
 
 			sendChatBatch(procId, batch);
 
@@ -1026,7 +1226,7 @@ void Player::chatDebounceThread(DWORD procId)
 	debounceThreadRunning[procId] = false;
 }
 
-void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage>& messages)
+void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage> &messages)
 {
 	if (messages.empty())
 	{
@@ -1048,7 +1248,7 @@ void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage>& message
 		// Group messages by type
 		std::map<std::string, std::vector<std::string>> messagesByType;
 
-		for (const auto& msg : messages)
+		for (const auto &msg : messages)
 		{
 			std::string typeKey = msg.getMessageTypeString();
 			// Use the original raw content to preserve formatting
@@ -1056,20 +1256,21 @@ void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage>& message
 		}
 
 		// Send each message type as a separate request
-		for (const auto& [messageType, msgList] : messagesByType)
+		for (const auto &[messageType, msgList] : messagesByType)
 		{
 			// Build JSON payload matching your endpoint structure
 			// messages is an object with string keys starting from "1" (Lua convention)
 			std::ostringstream json;
 			json << "{"
-			     << "\"playerId\":" << playerId << ","
-			     << "\"playerName\":\"" << escapeJsonString(playerName) << "\","
-			     << "\"messageType\":\"" << escapeJsonString(messageType) << "\","
-			     << "\"messages\":{";
+					 << "\"playerId\":" << playerId << ","
+					 << "\"playerName\":\"" << escapeJsonString(playerName) << "\","
+					 << "\"messageType\":\"" << escapeJsonString(messageType) << "\","
+					 << "\"messages\":{";
 
 			for (size_t i = 0; i < msgList.size(); i++)
 			{
-				if (i > 0) json << ",";
+				if (i > 0)
+					json << ",";
 				// Use 1-based indexing (Lua convention)
 				json << "\"" << (i + 1) << "\":\"" << escapeJsonString(msgList[i]) << "\"";
 			}
@@ -1079,13 +1280,13 @@ void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage>& message
 			// Send to your endpoint
 			HttpClient client;
 			client.setHeader("Content-Type", "application/json")
-			      .setHeader("Accept", "application/json")
-			      .setTimeout(10);
+					.setHeader("Accept", "application/json")
+					.setTimeout(10);
 
 			std::string endpoint = "http://192.168.5.30:8080/set_messages";
 
-			std::cout << "[Chat] Sending " << msgList.size() << " " << messageType
-			         << " messages for " << playerName << std::endl;
+			std::cout << "[Chat][" << playerName << " PID:" << procId << "] Sending "
+								<< msgList.size() << " " << messageType << " messages" << std::endl;
 			std::cout << "[Chat] JSON: " << json.str() << std::endl;
 
 			HttpClient::HttpResponse response = client.post(endpoint, json.str());
@@ -1097,11 +1298,11 @@ void Player::sendChatBatch(DWORD procId, const std::vector<ChatMessage>& message
 			else
 			{
 				std::cout << "[Chat] Failed to send messages. HTTP " << response.statusCode
-				         << ": " << response.body << std::endl;
+									<< ": " << response.body << std::endl;
 			}
 		}
 	}
-	catch (const std::exception& e)
+	catch (const std::exception &e)
 	{
 		std::cout << "[Chat] Error sending chat batch: " << e.what() << std::endl;
 	}
@@ -1121,7 +1322,7 @@ void Player::sendChatMessagesToServer(DWORD procId)
 		}
 
 		// Copy messages
-		for (const auto& msg : processChats[procId])
+		for (const auto &msg : processChats[procId])
 		{
 			messages.push_back(msg);
 		}
@@ -1130,7 +1331,7 @@ void Player::sendChatMessagesToServer(DWORD procId)
 	}
 
 	std::cout << "[Chat] Manually sending " << messages.size()
-	         << " messages for process " << procId << std::endl;
+						<< " messages for process " << procId << std::endl;
 
 	// Send immediately (not in background thread since this is manual)
 	sendChatBatch(procId, messages);

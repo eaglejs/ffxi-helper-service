@@ -31,6 +31,7 @@ set(SOURCES
     src/FFXIHelperService.cpp
     src/helpers/memory.cpp
     src/helpers/http.cpp
+    src/helpers/logger.cpp
     src/Player/Player.cpp
     src/Player/TacticalPointsProperty.cpp
     src/Player/ChatLogProperty.cpp
